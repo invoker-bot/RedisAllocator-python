@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Setup script for selenium_browser."""
+"""Setup script for redis-allocator."""
 from setuptools import setup, find_packages
 
 __version__ = '0.0.1'
@@ -15,6 +15,12 @@ tests_require = [
     'fakeredis[lua] >= 2.20.1',
     'flake8 >= 6.1.0',
     'freezegun >= 1.4.0',
+]
+
+docs_require = [
+    'sphinx >= 7.0.0',
+    'sphinx-rtd-theme >= 1.3.0',
+    'sphinx-git >= 11.0.0',
 ]
 
 setup(
@@ -46,14 +52,11 @@ setup(
     install_requires=[
         'redis >= 5.0.0',
     ],
-    setup_requires=['pytest-runner >= 6.0.1'],
     tests_require=tests_require,
     extras_require={
         'test': tests_require,
+        'docs': docs_require,
+        'dev': tests_require + docs_require,
     },
     license='MIT',
-    aliases={
-        'test': 'pytest',
-    }
-    # entry_points={}
 )

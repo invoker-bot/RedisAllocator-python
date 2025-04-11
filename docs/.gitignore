@@ -1,0 +1,10 @@
+# Sphinx build directories
+build/
+_build/
+
+# Generated files
+.DS_Store
+__pycache__/
+*.py[cod]
+*$py.class
+*.so 
