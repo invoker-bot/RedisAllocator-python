@@ -1,6 +1,6 @@
 """Redis-based distributed memory allocation system.
 
-This module provides the core functionality of the RedisAllocator system, 
+This module provides the core functionality of the RedisAllocator system,
 allowing for distributed memory allocation with support for garbage collection,
 thread health checking, and priority-based allocation mechanisms.
 """
@@ -135,12 +135,12 @@ class RedisAllocatorObject(Generic[U]):
 
 class RedisAllocator(RedisLockPool, Generic[U]):
     """A Redis-based distributed memory allocation system.
-    
+
     This class implements a memory allocation interface using Redis as the backend store.
     It manages a pool of resources that can be allocated, freed, and garbage collected.
     The implementation uses a doubly-linked list structure stored in Redis hashes to
     track available and allocated resources.
-    
+
     Generic type U must implement the RedisContextableObject protocol, allowing
     allocated objects to be used as context managers.
     """
@@ -148,7 +148,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     def __init__(self, redis: Redis, prefix: str, suffix='allocator', eps=1e-6,
                  shared=False):
         """Initialize a RedisAllocator instance.
-        
+
         Args:
             redis: Redis client for communication with Redis server
             prefix: Prefix for all Redis keys used by this allocator
@@ -169,10 +169,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def _pool_pointer_str(self, head: bool = True):
         """Get the Redis key for the head or tail pointer of the allocation pool.
-        
+
         Args:
             head: If True, get the head pointer key; otherwise, get the tail pointer key
-            
+
         Returns:
             String representation of the Redis key for the pointer
         """
@@ -181,7 +181,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def _gc_cursor_str(self):
         """Get the Redis key for the garbage collection cursor.
-        
+
         Returns:
             String representation of the Redis key for the GC cursor
         """
@@ -190,7 +190,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _lua_required_string(self):
         """LUA script containing helper functions for Redis operations.
-        
+
         This script defines various LUA functions for manipulating the doubly-linked list
         structure that represents the allocation pool:
         - pool_pointer_str: Get Redis keys for head/tail pointers
@@ -284,7 +284,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _extend_lua_string(self):
         """LUA script for extending the allocation pool with new resources.
-        
+
         This script adds new items to the pool if they don't already exist.
         New items are added to the tail of the linked list.
         """
@@ -305,7 +305,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def extend(self, keys: Optional[Sequence[str]] = None):
         """Add new resources to the allocation pool.
-        
+
         Args:
             keys: Sequence of resource identifiers to add to the pool
         """
@@ -315,7 +315,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _shrink_lua_string(self):
         """LUA script for removing resources from the allocation pool.
-        
+
         This script removes specified items from the pool by deleting them
         from the linked list structure.
         """
@@ -332,7 +332,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def shrink(self, keys: Optional[Sequence[str]] = None):
         """Remove resources from the allocation pool.
-        
+
         Args:
             keys: Sequence of resource identifiers to remove from the pool
         """
@@ -342,7 +342,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _assign_lua_string(self):
         """LUA script for completely replacing the resources in the allocation pool.
-        
+
         This script clears the existing pool and replaces it with a new set of resources.
         Items not in the new set are removed, and items in the new set but not in the
         existing pool are added to the tail of the linked list.
@@ -374,7 +374,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def assign(self, keys: Optional[Sequence[str]] = None):
         """Completely replace the resources in the allocation pool.
-        
+
         Args:
             keys: Sequence of resource identifiers to assign to the pool,
                  replacing any existing resources
@@ -386,7 +386,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def keys(self) -> Iterable[str]:
         """Get all resource identifiers in the allocation pool.
-        
+
         Returns:
             Iterable of resource identifiers in the pool
         """
@@ -394,10 +394,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def __contains__(self, key):
         """Check if a resource identifier is in the allocation pool.
-        
+
         Args:
             key: Resource identifier to check
-            
+
         Returns:
             True if the resource is in the pool, False otherwise
         """
@@ -406,7 +406,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _cache_str(self):
         """Get the Redis key for the allocator's cache.
-        
+
         Returns:
             String representation of the Redis key for the cache
         """
@@ -419,10 +419,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def _soft_bind_name(self, name: str) -> str:
         """Get the Redis key for a soft binding.
-        
+
         Args:
             name: Name of the soft binding
-            
+
         Returns:
             String representation of the Redis key for the soft binding
         """
@@ -430,7 +430,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def update_soft_bind(self, name: str, key: str):
         """Update a soft binding between a name and a resource.
-        
+
         Args:
             name: Name to bind
             key: Resource identifier to bind to the name
@@ -439,7 +439,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def unbind_soft_bind(self, name: str):
         """Remove a soft binding.
-        
+
         Args:
             name: Name of the soft binding to remove
         """
@@ -448,7 +448,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _malloc_lua_script(self):
         """LUA script for allocating a resource from the pool.
-        
+
         This script allocates a resource by popping an item from the head
         of the linked list and marking it as allocated. If the allocator
         is not shared, the script also sets a lock on the allocated resource.
@@ -481,10 +481,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def malloc_key(self, timeout: Timeout = 120) -> Optional[str]:
         """Allocate a resource key from the pool.
-        
+
         Args:
             timeout: How long the allocation should be valid (in seconds)
-            
+
         Returns:
             Resource identifier if allocation was successful, None otherwise
         """
@@ -492,12 +492,12 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def malloc(self, timeout: Timeout = 120, obj: Optional[U] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject[U]]:
         """Allocate a resource from the pool and wrap it in a RedisAllocatorObject.
-        
+
         Args:
             timeout: How long the allocation should be valid (in seconds)
             obj: The object to wrap in the RedisAllocatorObject
             params: Additional parameters to associate with the allocated object
-            
+
         Returns:
             RedisAllocatorObject wrapping the allocated resource if successful, None otherwise
         """
@@ -509,7 +509,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _free_lua_script(self):
         """LUA script for freeing allocated resources.
-        
+
         This script frees allocated resources by removing their locks
         and pushing them back to the tail of the linked list.
         """
@@ -528,7 +528,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def free_keys(self, *keys: str):
         """Free allocated resources.
-        
+
         Args:
             *keys: Resource identifiers to free
         """
@@ -546,12 +546,12 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @property
     def _gc_lua_script(self):
         """LUA script for garbage collection of the allocation pool.
-        
+
         This script scans through the pool and performs two types of cleanup:
         1. Resources marked as allocated but not actually locked are pushed back
            to the available pool
         2. Resources not marked as allocated but actually locked are marked as allocated
-        
+
         This ensures consistency between the allocation metadata and the actual locks.
         """
         return f'''
@@ -589,10 +589,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def gc(self, count: int = 10):
         """Perform garbage collection on the allocation pool.
-        
+
         This method scans through the pool and ensures consistency between
         the allocation metadata and the actual locks.
-        
+
         Args:
             count: Number of items to check in this garbage collection pass
         """

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class TaskExecutePolicy(Enum):
     """Defines different policies for task execution.
-    
+
     Attributes:
         Local: Execute task only locally
         Remote: Execute task only remotely
@@ -40,10 +40,10 @@ class TaskExecutePolicy(Enum):
 @dataclass
 class RedisTask:
     """Represents a task in the Redis task queue system.
-    
+
     This class encapsulates all information related to a task, including
     its unique ID, name, parameters, and execution status.
-    
+
     Attributes:
         id: Unique identifier for the task
         name: Name of the task category
@@ -74,11 +74,11 @@ class RedisTask:
 
     def update(self, current_progress: float, total_progress: float):
         """Update the progress of the task.
-        
+
         Args:
             current_progress: The current progress value
             total_progress: The total progress value for completion
-            
+
         Raises:
             TimeoutError: If the task has expired
         """
@@ -94,11 +94,11 @@ class RedisTaskQueue:
     """A class that provides a simple interface for managing a task queue in Redis.
 
     This class enables distributed task processing through Redis, with support for
-    asynchronous processing, task listening, and result retrieval. Tasks can be 
+    asynchronous processing, task listening, and result retrieval. Tasks can be
     executed locally or remotely based on configurable policies.
     """
 
-    def __init__(self, redis: Redis, prefix: str, suffix='task-queue', timeout=300, interval=5, 
+    def __init__(self, redis: Redis, prefix: str, suffix='task-queue', timeout=300, interval=5,
                  task_fn: Callable[[RedisTask], Any] = None):
         """Initialize a RedisTaskQueue instance.
 
@@ -119,12 +119,12 @@ class RedisTaskQueue:
 
     def build_task(self, id: str, name: str, params: dict) -> RedisTask:
         """Create a new RedisTask instance with the given parameters.
-        
+
         Args:
             id: Unique identifier for the task
             name: Name of the task category
             params: Dictionary of parameters for the task
-            
+
         Returns:
             A new RedisTask instance with a save function configured
         """
@@ -134,15 +134,15 @@ class RedisTaskQueue:
 
     def execute_task_remotely(self, task: RedisTask, timeout: Optional[float] = None, once: bool = False) -> Any:
         """Execute a task remotely by pushing it to the queue.
-        
+
         Args:
             task: The RedisTask to execute
             timeout: Optional timeout in seconds, defaults to self.timeout
             once: Whether to delete the result after getting it
-            
+
         Returns:
             The result of the task
-            
+
         Raises:
             TimeoutError: If the task times out
             Exception: Any exception raised during task execution
@@ -164,14 +164,14 @@ class RedisTaskQueue:
 
     def execute_task_locally(self, task: RedisTask, timeout: Optional[float] = None) -> Any:
         """Execute a task locally using the task_fn.
-        
+
         Args:
             task: The RedisTask to execute
             timeout: Optional timeout in seconds, updates task.expiry if provided
-            
+
         Returns:
             The result of the task
-            
+
         Raises:
             Exception: Any exception raised during task execution
         """
@@ -189,7 +189,7 @@ class RedisTaskQueue:
     @cached_property
     def _queue_prefix(self) -> str:
         """Get the prefix for queue keys.
-        
+
         Returns:
             The queue prefix
         """
@@ -200,7 +200,7 @@ class RedisTaskQueue:
 
         Args:
             name: The task name.
-            
+
         Returns:
             The formatted queue key.
         """
@@ -208,13 +208,13 @@ class RedisTaskQueue:
 
     def _queue_name(self, key: str) -> str:
         """Extract the queue name from a queue key.
-        
+
         Args:
             key: The queue key.
-            
+
         Returns:
             The queue name.
-            
+
         Raises:
             AssertionError: If the key doesn't start with the queue prefix.
         """
@@ -223,10 +223,10 @@ class RedisTaskQueue:
 
     def _queue_listen_name(self, name: str) -> str:
         """Generate a listen name for the given task name.
-        
+
         Args:
             name: The task name.
-            
+
         Returns:
             The formatted listen name.
         """
@@ -242,10 +242,10 @@ class RedisTaskQueue:
 
     def _result_key(self, task_id: str) -> str:
         """Generate a result key for the given task ID.
-        
+
         Args:
             task_id: The task ID.
-            
+
         Returns:
             The formatted result key.
         """
@@ -253,10 +253,10 @@ class RedisTaskQueue:
 
     def set_task(self, task: RedisTask) -> str:
         """Save a task to Redis.
-        
+
         Args:
             task: The RedisTask to save.
-            
+
         Returns:
             The task ID.
         """
@@ -268,11 +268,11 @@ class RedisTaskQueue:
 
     def get_task(self, task_id: str, once: bool = False) -> Optional[RedisTask]:
         """Get a task from Redis.
-        
+
         Args:
             task_id: The task ID.
             once: Whether to delete the task after getting it.
-            
+
         Returns:
             The RedisTask, or None if no task is available.
         """
@@ -286,10 +286,10 @@ class RedisTaskQueue:
 
     def has_task(self, task_id: str) -> bool:
         """Check if a task exists.
-        
+
         Args:
             task_id: The task ID.
-            
+
         Returns:
             True if the task exists, False otherwise.
         """
@@ -298,12 +298,12 @@ class RedisTaskQueue:
     @contextmanager
     def _executor_context(self, max_workers: int = 128):
         """Create a ThreadPoolExecutor context manager.
-        
+
         This is a helper method for testing and internal use.
-        
+
         Args:
             max_workers: The maximum number of worker threads.
-            
+
         Yields:
             The ThreadPoolExecutor instance.
         """
@@ -312,10 +312,10 @@ class RedisTaskQueue:
 
     def listen(self, names: List[str], workers: int = 128, event: Optional[Event] = None) -> None:
         """Listen for tasks on the specified queues.
-        
-        This method continuously polls the specified queues for tasks, 
+
+        This method continuously polls the specified queues for tasks,
         and executes tasks locally when they are received.
-        
+
         Args:
             names: The names of the queues to listen to.
             workers: The number of worker threads to use. Default is 128.
@@ -339,10 +339,10 @@ class RedisTaskQueue:
     def query(self, id: str, name: str, params: dict, timeout: Optional[float] = None,
               policy: TaskExecutePolicy = TaskExecutePolicy.Auto, once: bool = False) -> Any:
         """Execute a task according to the specified policy.
-        
+
         This method provides a flexible way to execute tasks with different
         strategies based on the specified policy.
-        
+
         Args:
             id: The task ID.
             name: The task name.
@@ -350,10 +350,10 @@ class RedisTaskQueue:
             timeout: Optional timeout override.
             policy: The execution policy to use.
             once: Whether to delete the result after getting it.
-            
+
         Returns:
             The result of the task.
-            
+
         Raises:
             Exception: Any exception raised during task execution.
         """
