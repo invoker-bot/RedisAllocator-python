@@ -7,6 +7,7 @@ thread health checking, and priority-based allocation mechanisms.
 import logging
 import weakref
 from abc import ABC, abstractmethod
+from typing import Any
 from functools import cached_property
 from threading import current_thread
 from typing import (Optional, TypeVar, Generic,
@@ -31,7 +32,11 @@ class RedisAllocatableClass(ABC):
     def close(self):
         """close the object."""
         pass
+    
+    def is_healthy(self):
+        return True
 
+    @property
     def name(self) -> Optional[str]:
         """Get the cache name of the object."""
         return None
@@ -91,7 +96,7 @@ class RedisAllocatorObject(Generic[U]):
     including locking and unlocking mechanisms for thread-safe operations.
 
     """
-    _allocator: 'RedisAllocator'  # Reference to the allocator that created this object
+    allocator: 'RedisAllocator'  # Reference to the allocator that created this object
     key: str                      # Redis key for this allocated object
     params: Optional[dict]        # Parameters associated with this object
     obj: Optional[U]              # The actual object being allocated
@@ -105,7 +110,7 @@ class RedisAllocatorObject(Generic[U]):
             obj: The actual object being allocated
             params: Additional parameters passed by local program
         """
-        self._allocator = allocator
+        self.allocator = allocator
         self.key = key
         self.obj = obj
         self.params = params
@@ -119,18 +124,52 @@ class RedisAllocatorObject(Generic[U]):
             timeout: How long the lock should be valid (in seconds)
         """
         if timeout > 0:
-            self._allocator.update(self.key, timeout=timeout)
+            self.allocator.update(self.key, timeout=timeout)
         else:
-            self._allocator.free(self)
+            self.allocator.free(self)
 
     def close(self):
         """Kill the object."""
         if self.obj is not None:
             self.obj.close()
 
+    # def refresh(self):
+    #     """Refresh the object."""
+
     def __del__(self):
         """Delete the object."""
         self.close()
+
+
+class RedisAllocatorUpdater:
+    """A class that updates the allocator keys."""
+
+    def __init__(self, allocator: 'RedisAllocator', params: Sequence[Any]):
+        """Initialize the allocator updater."""
+        assert len(params) > 0, "params should not be empty"
+        self.allocator = allocator
+        self.params = params
+        self.index = 0
+
+    @abstractmethod
+    def fetch(self, param: Any) -> Sequence[str]:
+        """Fetch the keys from params."""
+        pass
+
+    def __call__(self):
+        """Update the allocator key."""
+        current_param = self.params[self.index]
+        self.index = (self.index + 1) % len(self.params)
+        keys = self.fetch(current_param)
+        if len(self.params) > 1:
+            self.allocator.extend(keys)
+        else:
+            self.allocator.assign(keys)
+
+
+class RedisAllocatePolicy:
+
+    pass
 
 
 class RedisAllocator(RedisLockPool, Generic[U]):
@@ -211,21 +250,41 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local function gc_cursor_str()
             return '{self._pool_str()}|gc_cursor'
         end
+        local function cache_str()
+            return '{self._cache_str}'
+        end
+        local function split_pool_value(value)
+            local prev, next, expiry = string.match(value, "(.*)||(.*)||(.*)")
+            return prev, next, tonumber(expiry)
+        end
+        local function join_pool_value(prev, next, timeout)
+            local expiry
+            if timeout ~= nil and timeout > 0 then
+                expiry = os.time() + timeout
+            else
+                expiry = -1
+            end
+            return tostring(prev) .. "||" .. tostring(next) .. "||" .. tostring(expiry)
+        end
+        local function is_expired(value)
+            local _, _, expiry = split_pool_value(value)
+            return expiry ~= nil and expiry > 0 and expiry <= os.time()
+        end
         local poolItemsKey = pool_str()
         local headKey      = pool_pointer_str(true)
         local tailKey      = pool_pointer_str(false)
-        local function push_to_tail(itemName)
-            local tail         = redis.call("GET", tailKey)
+        local function push_to_tail(itemName, timeout)
+            local tail = redis.call("GET", tailKey)
             if not tail then
                 tail = ""
             end
-            redis.call("HSET", poolItemsKey, itemName, tostring(tail) .. "||")
+            redis.call("HSET", poolItemsKey, itemName, join_pool_value(tail, "", timeout))
             if tail == "" then
                 redis.call("SET", headKey, itemName)
             else
                 local tailVal = redis.call("HGET", poolItemsKey, tail)
-                local prev, _ = string.match(tailVal, "(.*)||(.*)")
-                redis.call("HSET", poolItemsKey, tail, tostring(prev) .. "||" .. tostring(itemName))
+                local prev, next, expiry = split_pool_value(tailVal)
+                redis.call("HSET", poolItemsKey, tail, join_pool_value(prev, itemName, expiry))
             end
             redis.call("SET", tailKey, itemName)
         end
@@ -242,14 +301,22 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             else
                 assert(headVal ~= "#ALLOCATED", "head is allocated")
             end
-            local _, next = string.match(headVal, "(.*)||(.*)")
+            
+            -- Check if the head item has expired
+            if is_expired(headVal) then
+                -- Item has expired, remove it and try the next one
+                delete_item(head)
+                return pop_from_head()
+            end
+            
+            local prev, next, expiry = split_pool_value(headVal)
             if next == "" then
                 redis.call("SET", headKey, "")
                 redis.call("SET", tailKey, "")
             else
                 local nextVal = redis.call("HGET", poolItemsKey, next)
-                local prev, _ = string.match(nextVal, "(.*)||(.*)")
-                redis.call("HSET", poolItemsKey, next, tostring("") .. "||" .. tostring(prev))
+                local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)
+                redis.call("HSET", poolItemsKey, next, join_pool_value("", nextNext, nextExpiry))
                 redis.call("SET", headKey, next)
             end
             return head
@@ -257,12 +324,12 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local function delete_item(itemName)
             local val = redis.call("HGET", poolItemsKey, itemName)
             if val ~= '#ALLOCATED' then
-                local prev, next = string.match(val, "(.*)||(.*)")
+                local prev, next, expiry = split_pool_value(val)
                 if prev ~= "" then
                     local prevVal = redis.call("HGET", poolItemsKey, prev)
                     if prevVal then
-                        local p, _ = string.match(prevVal, "(.*)||(.*)")
-                        redis.call("HSET", poolItemsKey, prev, tostring(p) .. "||" .. tostring(next))
+                        local prevPrev, prevNext, prevExpiry = split_pool_value(prevVal)
+                        redis.call("HSET", poolItemsKey, prev, join_pool_value(prevPrev, next, prevExpiry))
                     end
                 else
                     redis.call("SET", headKey, next or "")
@@ -270,8 +337,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 if next ~= "" then
                     local nxtVal = redis.call("HGET", poolItemsKey, next)
                     if nxtVal then
-                        local _, n = string.match(nxtVal, "(.*)||(.*)")
-                        redis.call("HSET", poolItemsKey, next, tostring(prev) .. "||" .. tostring(n))
+                        local nextPrev, nextNext, nextExpiry = split_pool_value(nxtVal)
+                        redis.call("HSET", poolItemsKey, next, join_pool_value(prev, nextNext, nextExpiry))
                     end
                 else
                     redis.call("SET", tailKey, prev or "")
@@ -289,11 +356,13 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         New items are added to the tail of the linked list.
         """
         return f'''{self._lua_required_string}
-        for _, itemName in ipairs(ARGV) do
+        local timeout = tonumber(ARGV[1] or -1)
+        for i=2, #ARGV do
+            local itemName = ARGV[i]
             if redis.call("HEXISTS", poolItemsKey, itemName) == 1 then
                 -- todo: gc check
             else
-                push_to_tail(itemName)
+                push_to_tail(itemName, timeout)
             end
         end
         '''
@@ -303,14 +372,15 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """Cached Redis script for extending the allocation pool."""
         return self.redis.register_script(self._extend_lua_string)
 
-    def extend(self, keys: Optional[Sequence[str]] = None):
+    def extend(self, keys: Optional[Sequence[str]] = None, timeout: int = -1):
         """Add new resources to the allocation pool.
 
         Args:
             keys: Sequence of resource identifiers to add to the pool
+            timeout: Optional timeout in seconds for the pool items (-1 means no timeout)
         """
         if keys is not None and len(keys) > 0:
-            self._extend_script(args=keys)
+            self._extend_script(args=[timeout] + list(keys))
 
     @property
     def _shrink_lua_string(self):
@@ -320,7 +390,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         from the linked list structure.
         """
         return f'''{self._lua_required_string}
-        for _, itemName in ipairs(ARGV) do
+        for i=1, #ARGV do
+            local itemName = ARGV[i]
             delete_item(itemName)
         end
         '''
@@ -348,8 +419,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         existing pool are added to the tail of the linked list.
         """
         return f'''{self._lua_required_string}
+        local timeout = tonumber(ARGV[1] or -1)
         local wantSet  = {{}}
-        for _, k in ipairs(ARGV) do
+        for i=2, #ARGV do
+            local k = ARGV[i]
             wantSet[k] = true
         end
         local allItems = redis.call("HKEYS", poolItemsKey)
@@ -362,7 +435,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         end
         for k, v in pairs(wantSet) do
             if v then
-                push_to_tail(k)
+                push_to_tail(k, timeout)
             end
         end
         '''
@@ -372,15 +445,16 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """Cached Redis script for assigning resources to the allocation pool."""
         return self.redis.register_script(self._assign_lua_string)
 
-    def assign(self, keys: Optional[Sequence[str]] = None):
+    def assign(self, keys: Optional[Sequence[str]] = None, timeout: int = -1):
         """Completely replace the resources in the allocation pool.
 
         Args:
             keys: Sequence of resource identifiers to assign to the pool,
                  replacing any existing resources
+            timeout: Optional timeout in seconds for the pool items (-1 means no timeout)
         """
         if keys is not None and len(keys) > 0:
-            self._assign_lua_script(args=keys)
+            self._assign_lua_script(args=[timeout] + list(keys))
         else:
             self.clear()
 
@@ -479,16 +553,17 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """Cached Redis script for allocating a resource."""
         return self.redis.register_script(self._malloc_lua_script)
 
-    def malloc_key(self, timeout: Timeout = 120) -> Optional[str]:
+    def malloc_key(self, timeout: Timeout = 120, obj: Optional[U] = None) -> Optional[str]:
         """Allocate a resource key from the pool.
 
         Args:
             timeout: How long the allocation should be valid (in seconds)
+            obj: Optional object to use for additional context
 
         Returns:
             Resource identifier if allocation was successful, None otherwise
         """
-        return self._malloc_script(keys=[self._to_seconds(timeout)])
+        return self._malloc_script(args=[self._to_seconds(timeout)])
 
     def malloc(self, timeout: Timeout = 120, obj: Optional[U] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject[U]]:
         """Allocate a resource from the pool and wrap it in a RedisAllocatorObject.
@@ -501,7 +576,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         Returns:
             RedisAllocatorObject wrapping the allocated resource if successful, None otherwise
         """
-        key = self.malloc_key(timeout)
+        key = self.malloc_key(timeout, obj)
         if key is None:
             return None
         return RedisAllocatorObject(self, key, obj, params)
@@ -515,9 +590,11 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         return f'''
         {self._lua_required_string}
-        for _, k in ipairs(KEYS) do
+        local timeout = tonumber(ARGV[1] or -1)
+        for i=2, #ARGV do
+            local k = ARGV[i]
             redis.call('DEL', key_str(k))
-            push_to_tail(k)
+            push_to_tail(k, timeout)
         end
         '''
 
@@ -526,17 +603,24 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """Cached Redis script for freeing allocated resources."""
         return self.redis.register_script(self._free_lua_script)
 
-    def free_keys(self, *keys: str):
+    def free_keys(self, *keys: str, timeout: int = -1):
         """Free allocated resources.
 
         Args:
             *keys: Resource identifiers to free
+            timeout: Optional timeout in seconds for the pool items (-1 means no timeout)
         """
-        self._free_script(keys, args=keys)
+        if keys:
+            self._free_script(args=[timeout] + list(keys))
 
-    def free(self, obj: RedisAllocatorObject[U]):
-        """Free an allocated object."""
-        self.free_keys(obj.key)
+    def free(self, obj: RedisAllocatorObject[U], timeout: int = -1):
+        """Free an allocated object.
+        
+        Args:
+            obj: The allocated object to free
+            timeout: Optional timeout in seconds for the pool item (-1 means no timeout)
+        """
+        self.free_keys(obj.key, timeout=timeout)
 
     @cached_property
     def _gc_script(self):
@@ -551,6 +635,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         1. Resources marked as allocated but not actually locked are pushed back
            to the available pool
         2. Resources not marked as allocated but actually locked are marked as allocated
+        3. Resources that have expired are removed from the pool
 
         This ensures consistency between the allocation metadata and the actual locks.
         """
@@ -575,16 +660,22 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             if val == "#ALLOCATED" then
                 local locked = (redis.call("EXISTS", key_str(itemName)) == 1)
                 if not locked then
-                    push_to_tail(itemName)
+                    push_to_tail(itemName, -1)
                 end
             else
-                local locked = (redis.call("EXISTS", key_str(itemName)) == 1)
-                if locked then
+                -- Check if the item has expired
+                if is_expired(val) then
                     delete_item(itemName)
-                    redis.call("HSET", poolItemsKey, itemName, "#ALLOCATED")
+                else
+                    local locked = (redis.call("EXISTS", key_str(itemName)) == 1)
+                    if locked then
+                        delete_item(itemName)
+                        redis.call("HSET", poolItemsKey, itemName, "#ALLOCATED")
+                    end
                 end
             end
         end
+        redis.call("SET", cursorKey, newCursor)
         '''
 
     def gc(self, count: int = 10):

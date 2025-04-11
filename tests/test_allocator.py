@@ -144,7 +144,7 @@ class TestRedisAllocatorObject:
         obj = RedisAllocatorObject(allocator, "test_key", test_object, params)
         
         # Verify properties
-        assert obj._allocator == allocator
+        assert obj.allocator == allocator
         assert obj.key == "test_key"
         assert obj.obj == test_object
         assert obj.params == params
@@ -159,7 +159,7 @@ class TestRedisAllocatorObject:
         obj = RedisAllocatorObject(allocator, "test_key")
         
         # Verify properties
-        assert obj._allocator == allocator
+        assert obj.allocator == allocator
         assert obj.key == "test_key"
         assert obj.obj is None
         assert obj.params is None
