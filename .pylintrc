@@ -1,0 +1,15 @@
+[MASTER]
+
+[MESSAGES CONTROL]
+disable = 
+
+[FORMAT]
+max-line-length = 150
+
+[TYPECHECK]
+generated-members = 
+
+[DESIGN]
+max-args = 10
+max-attributes = 10
+max-locals = 15

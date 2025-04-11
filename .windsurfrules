@@ -1,0 +1,6 @@
+1. Use English for coding though Chinese is talking
+2. Keep README.md updated when adding new rules
+3. Document any major changes or reorganizations
+4. Use the Google comment style when writing comments
+5. Always add pytest tests when writing new code, and make sure the tests pass
+6. Regular review and cleanup of deprecated rules
