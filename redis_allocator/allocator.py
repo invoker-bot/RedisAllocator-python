@@ -348,14 +348,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         end
         '''
 
-    @property
-    def _extend_lua_string(self):
-        """LUA script for extending the allocation pool with new resources.
-
-        This script adds new items to the pool if they don't already exist.
-        New items are added to the tail of the linked list.
-        """
-        return f'''{self._lua_required_string}
+    @cached_property
+    def _extend_script(self):
+        """Cached Redis script for extending the allocation pool."""
+        return self.redis.register_script(f'''{self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
         for i=2, #ARGV do
             local itemName = ARGV[i]
@@ -365,12 +361,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 push_to_tail(itemName, timeout)
             end
         end
-        '''
-
-    @cached_property
-    def _extend_script(self):
-        """Cached Redis script for extending the allocation pool."""
-        return self.redis.register_script(self._extend_lua_string)
+        ''')
 
     def extend(self, keys: Optional[Sequence[str]] = None, timeout: int = -1):
         """Add new resources to the allocation pool.
@@ -382,24 +373,15 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         if keys is not None and len(keys) > 0:
             self._extend_script(args=[timeout] + list(keys))
 
-    @property
-    def _shrink_lua_string(self):
-        """LUA script for removing resources from the allocation pool.
-
-        This script removes specified items from the pool by deleting them
-        from the linked list structure.
-        """
-        return f'''{self._lua_required_string}
+    @cached_property
+    def _shrink_script(self):
+        """Cached Redis script for shrinking the allocation pool."""
+        return self.redis.register_script(f'''{self._lua_required_string}
         for i=1, #ARGV do
             local itemName = ARGV[i]
             delete_item(itemName)
         end
-        '''
-
-    @cached_property
-    def _shrink_script(self):
-        """Cached Redis script for shrinking the allocation pool."""
-        return self.redis.register_script(self._shrink_lua_string)
+        ''')
 
     def shrink(self, keys: Optional[Sequence[str]] = None):
         """Remove resources from the allocation pool.
@@ -410,15 +392,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         if keys is not None and len(keys) > 0:
             self._shrink_script(args=keys)
 
-    @property
-    def _assign_lua_string(self):
-        """LUA script for completely replacing the resources in the allocation pool.
-
-        This script clears the existing pool and replaces it with a new set of resources.
-        Items not in the new set are removed, and items in the new set but not in the
-        existing pool are added to the tail of the linked list.
-        """
-        return f'''{self._lua_required_string}
+    @cached_property
+    def _assign_script(self):
+        """Cached Redis script for assigning resources to the allocation pool."""
+        return self.redis.register_script(f'''{self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
         local wantSet  = {{}}
         for i=2, #ARGV do
@@ -438,12 +415,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 push_to_tail(k, timeout)
             end
         end
-        '''
-
-    @cached_property
-    def _assign_lua_script(self):
-        """Cached Redis script for assigning resources to the allocation pool."""
-        return self.redis.register_script(self._assign_lua_string)
+        ''')
 
     def assign(self, keys: Optional[Sequence[str]] = None, timeout: int = -1):
         """Completely replace the resources in the allocation pool.
@@ -454,7 +426,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             timeout: Optional timeout in seconds for the pool items (-1 means no timeout)
         """
         if keys is not None and len(keys) > 0:
-            self._assign_lua_script(args=[timeout] + list(keys))
+            self._assign_script(args=[timeout] + list(keys))
         else:
             self.clear()
 
@@ -519,15 +491,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         self.unlock(self._soft_bind_name(name))
 
-    @property
-    def _malloc_lua_script(self):
-        """LUA script for allocating a resource from the pool.
-
-        This script allocates a resource by popping an item from the head
-        of the linked list and marking it as allocated. If the allocator
-        is not shared, the script also sets a lock on the allocated resource.
-        """
-        return f'''
+    @cached_property
+    def _malloc_script(self):
+        """Cached Redis script for allocating a resource."""
+        return self.redis.register_script(f'''
         {self._lua_required_string}
         local shared = {1 if self.shared else 0}
         local timeout = tonumber(ARGV[1])
@@ -546,12 +513,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             end
         end
         return itemName
-        '''
-
-    @cached_property
-    def _malloc_script(self):
-        """Cached Redis script for allocating a resource."""
-        return self.redis.register_script(self._malloc_lua_script)
+        ''')
 
     def malloc_key(self, timeout: Timeout = 120, obj: Optional[U] = None) -> Optional[str]:
         """Allocate a resource key from the pool.
@@ -581,14 +543,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             return None
         return RedisAllocatorObject(self, key, obj, params)
 
-    @property
-    def _free_lua_script(self):
-        """LUA script for freeing allocated resources.
-
-        This script frees allocated resources by removing their locks
-        and pushing them back to the tail of the linked list.
-        """
-        return f'''
+    @cached_property
+    def _free_script(self):
+        """Cached Redis script for freeing allocated resources."""
+        return self.redis.register_script(f'''
         {self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
         for i=2, #ARGV do
@@ -596,12 +554,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             redis.call('DEL', key_str(k))
             push_to_tail(k, timeout)
         end
-        '''
-
-    @cached_property
-    def _free_script(self):
-        """Cached Redis script for freeing allocated resources."""
-        return self.redis.register_script(self._free_lua_script)
+        ''')
 
     def free_keys(self, *keys: str, timeout: int = -1):
         """Free allocated resources.
@@ -625,21 +578,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     @cached_property
     def _gc_script(self):
         """Cached Redis script for garbage collection."""
-        return self.redis.register_script(self._gc_lua_script)
-
-    @property
-    def _gc_lua_script(self):
-        """LUA script for garbage collection of the allocation pool.
-
-        This script scans through the pool and performs two types of cleanup:
-        1. Resources marked as allocated but not actually locked are pushed back
-           to the available pool
-        2. Resources not marked as allocated but actually locked are marked as allocated
-        3. Resources that have expired are removed from the pool
-
-        This ensures consistency between the allocation metadata and the actual locks.
-        """
-        return f'''
+        return self.redis.register_script(f'''
         {self._lua_required_string}
         local n = tonumber(ARGV[1])
         local cursorKey = gc_cursor_str()
@@ -676,7 +615,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             end
         end
         redis.call("SET", cursorKey, newCursor)
-        '''
+        ''')
 
     def gc(self, count: int = 10):
         """Perform garbage collection on the allocation pool.

@@ -508,17 +508,17 @@ class TestRedisAllocator:
     
     def test_shared_vs_non_shared_allocation(self, allocator, shared_allocator):
         """Test difference between shared and non-shared allocation."""
-        # Set up mocks for both allocators
-        allocator._malloc_script = MagicMock(return_value="key1")
-        shared_allocator._malloc_script = MagicMock(return_value="key1")
-        
-        # Check the malloc_lua_script property for both allocators
-        non_shared_script = allocator._malloc_lua_script
-        shared_script = shared_allocator._malloc_lua_script
+        # Store the original scripts for inspection
+        non_shared_script = allocator._malloc_script.script
+        shared_script = shared_allocator._malloc_script.script
         
         # The scripts should be different, with shared=0 in non-shared and shared=1 in shared
         assert "local shared = 0" in non_shared_script
         assert "local shared = 1" in shared_script
+        
+        # Set up mocks for both allocators
+        allocator._malloc_script = MagicMock(return_value="key1")
+        shared_allocator._malloc_script = MagicMock(return_value="key1")
         
         # Both can allocate the same key, but behavior should differ
         assert allocator.malloc_key() == "key1"
