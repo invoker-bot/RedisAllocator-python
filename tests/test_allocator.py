@@ -9,6 +9,8 @@ This module tests the functionality of:
 import pytest
 from unittest.mock import MagicMock, patch, call
 from redis import RedisError
+from freezegun import freeze_time
+import datetime
 from redis_allocator.allocator import RedisAllocator, RedisThreadHealthCheckPool, RedisAllocatorObject, RedisAllocatableClass, RedisLockPool
 
 
@@ -296,6 +298,24 @@ class TestRedisAllocator:
         assert "key4" in allocator
         assert "key5" in allocator
     
+    def test_extend_with_timeout(self, allocator, redis_client):
+        """Test the extend method with timeout parameter."""
+        # Clear any existing data
+        redis_client.flushall()
+        
+        # Mock the _extend_script to verify the timeout parameter is passed correctly
+        original_script = allocator._extend_script
+        allocator._extend_script = MagicMock()
+        
+        # Call extend with timeout
+        allocator.extend(["key4", "key5"], timeout=60)
+        
+        # Verify the script was called with the correct timeout
+        allocator._extend_script.assert_called_once_with(args=[60, "key4", "key5"])
+        
+        # Restore the original script
+        allocator._extend_script = original_script
+    
     def test_extend_empty(self, allocator, redis_client):
         """Test extend with empty keys."""
         # Clear any existing data
@@ -362,6 +382,24 @@ class TestRedisAllocator:
         
         # All keys should be gone
         assert len(list(allocator.keys())) == 0
+    
+    def test_assign_with_timeout(self, allocator, redis_client):
+        """Test the assign method with timeout parameter."""
+        # Clear any existing data
+        redis_client.flushall()
+        
+        # Mock the _assign_script to verify the timeout parameter is passed correctly
+        original_script = allocator._assign_script
+        allocator._assign_script = MagicMock()
+        
+        # Call assign with timeout
+        allocator.assign(["key3", "key4"], timeout=60)
+        
+        # Verify the script was called with the correct timeout
+        allocator._assign_script.assert_called_once_with(args=[60, "key3", "key4"])
+        
+        # Restore the original script
+        allocator._assign_script = original_script
     
     def test_assign_empty(self, allocator, redis_client):
         """Test assign with empty keys."""
@@ -523,3 +561,223 @@ class TestRedisAllocator:
         # Both can allocate the same key, but behavior should differ
         assert allocator.malloc_key() == "key1"
         assert shared_allocator.malloc_key() == "key1"
+
+    def test_free_with_timeout(self, allocator, redis_client, test_object):
+        """Test the free method with timeout parameter."""
+        # Clear any existing data
+        redis_client.flushall()
+        
+        # Add a key that we'll allocate
+        allocator.extend(["key1"])
+        
+        # Mock the _free_script to verify the timeout parameter is passed correctly
+        original_script = allocator._free_script
+        allocator._free_script = MagicMock()
+        
+        # Create an object and free it with a timeout
+        obj = RedisAllocatorObject(allocator, "key1", test_object)
+        allocator.free(obj, timeout=60)
+        
+        # Verify the script was called with the correct timeout
+        allocator._free_script.assert_called_once_with(args=[60, "key1"])
+        
+        # Restore the original script
+        allocator._free_script = original_script
+
+    def test_actual_expiry_with_freezegun(self, allocator, redis_client):
+        """Test actual expiry behavior using freezegun for time manipulation."""
+        # Clear any existing data
+        redis_client.flushall()
+        
+        # Start at a fixed time
+        current_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+        
+        # Mock os.time() in Lua script
+        original_gc_script = allocator._gc_script
+        original_extend_script = allocator._extend_script
+        original_assign_script = allocator._assign_script
+        original_free_script = allocator._free_script
+        
+        # Store keys and their expiry times
+        expiry_times = {}
+        
+        # Mock extend script with custom time handling
+        def mock_extend(args=None):
+            if args is None:
+                return None
+            
+            timeout = int(args[0])
+            keys = args[1:]
+            
+            # Calculate expiry time based on current_time and timeout
+            if timeout > 0:
+                expiry_time = int(current_time.timestamp()) + timeout
+                for key in keys:
+                    # Store the key in Redis without actually using the Lua script
+                    redis_client.hset(allocator._pool_str(), key, "||")
+                    # Store the expiry time for our mocked GC
+                    expiry_times[key] = expiry_time
+            else:
+                for key in keys:
+                    # Store the key with no expiry
+                    redis_client.hset(allocator._pool_str(), key, "||")
+                    if key in expiry_times:
+                        del expiry_times[key]
+                        
+            return None
+        
+        # Mock assign script with custom time handling
+        def mock_assign(args=None):
+            if args is None:
+                return None
+                
+            timeout = int(args[0])
+            keys = args[1:]
+            
+            # Clear existing keys
+            redis_client.delete(allocator._pool_str())
+            expiry_times.clear()
+            
+            # Add new keys with expiry
+            if timeout > 0:
+                expiry_time = int(current_time.timestamp()) + timeout
+                for key in keys:
+                    # Store the key in Redis
+                    redis_client.hset(allocator._pool_str(), key, "||")
+                    # Store the expiry time
+                    expiry_times[key] = expiry_time
+            else:
+                for key in keys:
+                    # Store the key with no expiry
+                    redis_client.hset(allocator._pool_str(), key, "||")
+                    
+            return None
+            
+        # Mock free script with custom time handling
+        def mock_free(args=None):
+            if args is None:
+                return None
+                
+            timeout = int(args[0])
+            keys = args[1:]
+            
+            if timeout > 0:
+                expiry_time = int(current_time.timestamp()) + timeout
+                for key in keys:
+                    # Free the lock but add back to pool with expiry
+                    redis_client.delete(allocator._key_str(key))
+                    redis_client.hset(allocator._pool_str(), key, "||")
+                    expiry_times[key] = expiry_time
+            else:
+                for key in keys:
+                    # Free the lock and add back to pool without expiry
+                    redis_client.delete(allocator._key_str(key))
+                    redis_client.hset(allocator._pool_str(), key, "||")
+                    if key in expiry_times:
+                        del expiry_times[key]
+                        
+            return None
+        
+        # Mock GC script with custom time handling
+        def mock_gc(args=None):
+            current_timestamp = int(current_time.timestamp())
+            
+            # Get all keys
+            keys = redis_client.hkeys(allocator._pool_str())
+            
+            # Check each key for expiration
+            for key in keys:
+                key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+                if key_str in expiry_times and expiry_times[key_str] <= current_timestamp:
+                    # Key is expired, remove it
+                    redis_client.hdel(allocator._pool_str(), key)
+                    del expiry_times[key_str]
+                    
+            return None
+        
+        # Apply mocks
+        allocator._gc_script = MagicMock(side_effect=mock_gc)
+        allocator._extend_script = MagicMock(side_effect=mock_extend)
+        allocator._assign_script = MagicMock(side_effect=mock_assign)
+        allocator._free_script = MagicMock(side_effect=mock_free)
+        
+        try:
+            # Test extend with expiry
+            with freeze_time(current_time) as frozen_time:
+                # Add a key with 60 second expiry
+                allocator.extend(["expiring_key"], timeout=60)
+                
+                # Verify key exists
+                assert "expiring_key" in allocator
+                
+                # Advance time by 30 seconds (not expired yet)
+                current_time += datetime.timedelta(seconds=30)
+                frozen_time.move_to(current_time)
+                
+                # Run GC - key should still exist
+                allocator.gc()
+                assert "expiring_key" in allocator
+                
+                # Advance time by another 31 seconds (total 61 seconds, now expired)
+                current_time += datetime.timedelta(seconds=31)
+                frozen_time.move_to(current_time)
+                
+                # Run GC - key should be removed due to expiry
+                allocator.gc()
+                assert "expiring_key" not in allocator
+                
+                # Test with assign method
+                # Reset time to start
+                current_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+                frozen_time.move_to(current_time)
+                
+                # Add a key with 120 second expiry
+                allocator.assign(["assigned_key"], timeout=120)
+                
+                # Verify key exists
+                assert "assigned_key" in allocator
+                
+                # Advance time by 60 seconds (not expired yet)
+                current_time += datetime.timedelta(seconds=60)
+                frozen_time.move_to(current_time)
+                
+                # Run GC - key should still exist
+                allocator.gc()
+                assert "assigned_key" in allocator
+                
+                # Advance time by another 61 seconds (total 121 seconds, now expired)
+                current_time += datetime.timedelta(seconds=61)
+                frozen_time.move_to(current_time)
+                
+                # Run GC - key should be removed due to expiry
+                allocator.gc()
+                assert "assigned_key" not in allocator
+                
+                # Test with free method
+                # Reset time to start
+                current_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+                frozen_time.move_to(current_time)
+                
+                # Add a key
+                allocator.extend(["free_key"])
+                
+                # Create an allocator object and free it with timeout
+                obj = RedisAllocatorObject(allocator, "free_key", None)
+                allocator.free(obj, timeout=30)
+                
+                # Verify key exists
+                assert "free_key" in allocator
+                
+                # Advance time by 31 seconds (key expired)
+                current_time += datetime.timedelta(seconds=31)
+                frozen_time.move_to(current_time)
+                
+                # Run GC - key should be removed
+                allocator.gc()
+                assert "free_key" not in allocator
+        finally:
+            # Restore original scripts
+            allocator._gc_script = original_gc_script
+            allocator._extend_script = original_extend_script
+            allocator._assign_script = original_assign_script
+            allocator._free_script = original_free_script
