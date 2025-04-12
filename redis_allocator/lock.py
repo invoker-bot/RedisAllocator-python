@@ -207,7 +207,7 @@ class BaseLock(ABC):
         """Deletes a key when the comparison value is not equal to the current value."""
         return self._conditional_setdel('!=', key, value, None, None, True)
 
-    def _to_seconds(self, timeout: Timeout):
+    def _to_seconds(self, timeout: Timeout) -> float:
         """Convert a timeout to seconds."""
         if timeout is None:
             timeout = datetime(2099, 1, 1).timestamp()
