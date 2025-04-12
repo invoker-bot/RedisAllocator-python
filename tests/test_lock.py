@@ -1,16 +1,19 @@
 """Tests for the RedisLock and RedisLockPool classes."""
 
 from redis import Redis
-from redis_allocator.lock import (
+from redis_allocator import (
     RedisLock,
     RedisLockPool,
     LockStatus,
     ThreadLock,
-    ThreadLockPool,
+    ThreadLockPool
 )
 import time
 import concurrent.futures
 import pytest
+import threading
+from freezegun import freeze_time
+import datetime
 
 
 class TestRedisLock:
@@ -340,6 +343,153 @@ class TestRedisLock:
             AssertionError, match="Redis must be configured to decode responses"
         ):
             RedisLock(redis_client_raw, "test")
+
+    def test_multi_thread_lock_competition(self, redis_lock: RedisLock):
+        """Test that only one thread can acquire the same lock at a time."""
+        lock_key = "multi-thread-test-key"
+        num_threads = 10
+        success_count = 0
+        lock_holder = None
+        threads_completed = 0
+        thread_lock = threading.Lock()  # Thread lock to protect shared variables
+
+        # Initial time
+        current_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        def worker():
+            nonlocal success_count, lock_holder, threads_completed
+            thread_id = threading.get_ident()
+            # Try to acquire the lock multiple times with a small delay
+            for _ in range(5):  # Try 5 times
+                if redis_lock.lock(lock_key, value=str(thread_id), timeout=100):
+                    # This thread acquired the lock
+                    with thread_lock:  # Protect the shared counter
+                        success_count += 1
+                        lock_holder = thread_id
+                # Wait a bit before retrying
+                time.sleep(0.1)
+
+            with thread_lock:  # Protect the shared counter
+                threads_completed += 1
+
+        # Start multiple threads to compete for the lock
+        threads = []
+        for _ in range(num_threads):
+            thread = threading.Thread(target=worker)
+            thread.start()
+            threads.append(thread)
+
+        # Use busy waiting with freezegun to simulate time passing
+        with freeze_time(current_time) as frozen_time:
+            # Wait for all threads to complete using busy waiting
+            while any(thread.is_alive() for thread in threads):
+                # Advance time by 0.05 seconds to accelerate sleep
+                frozen_time.tick(0.05)
+                time.sleep(0.001)  # Short real sleep to prevent CPU hogging
+
+        # Verify only one thread got the lock
+        assert success_count == 1
+        assert lock_holder is not None
+        assert threads_completed == num_threads
+
+    def test_lock_timeout_expiry(self, redis_lock: RedisLock):
+        """Test that a lock can be acquired after the previous holder's timeout expires."""
+        lock_key = "timeout-test-key"
+        lock_timeout = 60  # 60 seconds timeout
+
+        # Set the starting time
+        initial_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        with freeze_time(initial_time) as frozen_time:
+            # First thread acquires the lock
+            thread1_id = "thread-1"
+            assert redis_lock.lock(lock_key, value=thread1_id, timeout=lock_timeout)
+
+            # Verify the lock is held by thread 1
+            assert redis_lock.is_locked(lock_key)
+            assert redis_lock.lock_value(lock_key) == thread1_id
+
+            # Thread 2 tries to acquire the same lock and fails
+            thread2_id = "thread-2"
+            assert not redis_lock.lock(lock_key, value=thread2_id)
+
+            # Advance time to just before timeout
+            frozen_time.tick(lock_timeout - 1)
+
+            # Thread 2 tries again and still fails
+            assert not redis_lock.lock(lock_key, value=thread2_id)
+
+            # Advance time past the timeout
+            frozen_time.tick(2)
+
+            # Thread 2 tries again and succeeds because the lock has expired
+            assert redis_lock.lock(lock_key, value=thread2_id)
+
+            # Verify the lock is now held by thread 2
+            assert redis_lock.is_locked(lock_key)
+            assert redis_lock.lock_value(lock_key) == thread2_id
+
+    def test_lock_update_prevents_timeout(self, redis_lock: RedisLock, redis_client: Redis):
+        """Test that updating a lock prevents it from timing out."""
+        lock_key = "update-test-key"
+        lock_timeout = 60  # 60 seconds timeout
+
+        # Set the starting time
+        initial_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        with freeze_time(initial_time) as frozen_time:
+            # First thread acquires the lock
+            thread1_id = "thread-1"
+            assert redis_lock.lock(lock_key, value=thread1_id, timeout=lock_timeout)
+
+            # Advance time to just before timeout
+            frozen_time.tick(lock_timeout - 10)
+
+            # Thread 1 updates the lock
+            redis_lock.update(lock_key, value=thread1_id, timeout=lock_timeout)
+
+            # Advance time past the original timeout
+            frozen_time.tick(20)
+
+            # Thread 2 tries to acquire the lock and fails because thread 1 updated it
+            thread2_id = "thread-2"
+            assert not redis_lock.lock(lock_key, value=thread2_id)
+
+            # Verify the lock is still held by thread 1
+            assert redis_lock.is_locked(lock_key)
+            assert redis_lock.lock_value(lock_key) == thread1_id
+
+            # Advance time past the new timeout
+            frozen_time.tick(lock_timeout)
+
+            # Thread 2 tries again and succeeds because the updated lock has expired
+            assert redis_lock.lock(lock_key, value=thread2_id)
+
+            # Verify the lock is now held by thread 2
+            assert redis_lock.is_locked(lock_key)
+            assert redis_lock.lock_value(lock_key) == thread2_id
+
+    def test_rlock_same_thread_different_thread(self, redis_lock: RedisLock, redis_client: Redis):
+        """Test that the same thread can rlock itself but different threads cannot."""
+        lock_key = "rlock-test-key"
+        thread1_id = "thread-1"
+        thread2_id = "thread-2"
+
+        # Thread 1 acquires the lock
+        assert redis_lock.lock(lock_key, value=thread1_id)
+
+        # Thread 1 can reacquire its own lock with rlock
+        assert redis_lock.rlock(lock_key, value=thread1_id)
+
+        # Thread 2 cannot acquire the lock with either lock or rlock
+        assert not redis_lock.lock(lock_key, value=thread2_id)
+        assert not redis_lock.rlock(lock_key, value=thread2_id)
+
+        # Thread 1 releases the lock
+        redis_lock.unlock(lock_key)
+
+        # Thread 2 can now acquire the lock
+        assert redis_lock.lock(lock_key, value=thread2_id)
 
 
 class TestRedisLockPool:
@@ -722,6 +872,162 @@ class TestThreadLock:
         future_time = datetime(2099, 1, 1).timestamp() - time.time()
         # Allow 10 seconds margin in the test
         assert thread_lock._get_ttl(test_key) > future_time - 10
+
+    def test_multi_thread_lock_competition(self, thread_lock: ThreadLock):
+        """Test that only one thread can acquire the same lock at a time."""
+        lock_key = "multi-thread-test-key"
+        num_threads = 10
+        success_count = 0
+        lock_holder = None
+        threads_completed = 0
+        thread_protect_lock = threading.Lock()  # Thread lock to protect shared variables
+
+        # Initial time
+        current_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        def worker():
+            nonlocal success_count, lock_holder, threads_completed
+            thread_id = threading.get_ident()
+
+            # Try to acquire the lock multiple times with a small delay
+            for _ in range(5):  # Try 5 times
+                if thread_lock.lock(lock_key, value=str(thread_id), timeout=100):
+                    # This thread acquired the lock
+                    with thread_protect_lock:  # Protect the shared counter
+                        success_count += 1
+                        lock_holder = thread_id
+
+                    # Hold the lock for a short time
+                    time.sleep(0.1)
+
+                    # Release the lock
+                    # thread_lock.unlock(lock_key)
+                    break
+
+                # Wait a bit before retrying
+                time.sleep(0.1)
+
+            with thread_protect_lock:  # Protect the shared counter
+                threads_completed += 1
+
+        # Start multiple threads to compete for the lock
+        threads = []
+        for _ in range(num_threads):
+            thread = threading.Thread(target=worker)
+            thread.start()
+            threads.append(thread)
+
+        # Use busy waiting with freezegun to simulate time passing
+        with freeze_time(current_time) as frozen_time:
+            # Wait for all threads to complete using busy waiting
+            while any(thread.is_alive() for thread in threads):
+                # Advance time by 0.05 seconds to accelerate sleeps
+                frozen_time.tick(0.05)
+                time.sleep(0.001)  # Short real sleep to prevent CPU hogging
+
+        # Verify only one thread got the lock
+        assert success_count == 1
+        assert lock_holder is not None
+        assert threads_completed == num_threads
+
+    def test_lock_timeout_expiry(self, thread_lock: ThreadLock):
+        """Test that a lock can be acquired after the previous holder's timeout expires."""
+        lock_key = "timeout-test-key"
+        lock_timeout = 60  # 60 seconds timeout
+
+        # Set the starting time
+        initial_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        with freeze_time(initial_time) as frozen_time:
+            # First thread acquires the lock
+            thread1_id = "thread-1"
+            assert thread_lock.lock(lock_key, value=thread1_id, timeout=lock_timeout)
+
+            # Verify the lock is held by thread 1
+            assert thread_lock.is_locked(lock_key)
+            assert thread_lock.lock_value(lock_key) == thread1_id
+
+            # Thread 2 tries to acquire the same lock and fails
+            thread2_id = "thread-2"
+            assert not thread_lock.lock(lock_key, value=thread2_id)
+
+            # Advance time to just before timeout
+            frozen_time.move_to(initial_time + datetime.timedelta(seconds=lock_timeout - 1))
+
+            # Thread 2 tries again and still fails
+            assert not thread_lock.lock(lock_key, value=thread2_id)
+
+            # Advance time past the timeout
+            frozen_time.move_to(initial_time + datetime.timedelta(seconds=lock_timeout + 1))
+
+            # Thread 2 tries again and succeeds because the lock has expired
+            assert thread_lock.lock(lock_key, value=thread2_id)
+
+            # Verify the lock is now held by thread 2
+            assert thread_lock.is_locked(lock_key)
+            assert thread_lock.lock_value(lock_key) == thread2_id
+
+    def test_lock_update_prevents_timeout(self, thread_lock: ThreadLock):
+        """Test that updating a lock prevents it from timing out."""
+        lock_key = "update-test-key"
+        lock_timeout = 60  # 60 seconds timeout
+
+        # Set the starting time
+        initial_time = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        with freeze_time(initial_time) as frozen_time:
+            # First thread acquires the lock
+            thread1_id = "thread-1"
+            assert thread_lock.lock(lock_key, value=thread1_id, timeout=lock_timeout)
+
+            # Advance time to just before timeout
+            frozen_time.move_to(initial_time + datetime.timedelta(seconds=lock_timeout - 10))
+
+            # Thread 1 updates the lock
+            thread_lock.update(lock_key, value=thread1_id, timeout=lock_timeout)
+
+            # Advance time past the original timeout
+            frozen_time.move_to(initial_time + datetime.timedelta(seconds=lock_timeout + 10))
+
+            # Thread 2 tries to acquire the lock and fails because thread 1 updated it
+            thread2_id = "thread-2"
+            assert not thread_lock.lock(lock_key, value=thread2_id)
+
+            # Verify the lock is still held by thread 1
+            assert thread_lock.is_locked(lock_key)
+            assert thread_lock.lock_value(lock_key) == thread1_id
+
+            # Advance time past the new timeout
+            frozen_time.move_to(initial_time + datetime.timedelta(seconds=2 * lock_timeout + 10))
+
+            # Thread 2 tries again and succeeds because the updated lock has expired
+            assert thread_lock.lock(lock_key, value=thread2_id)
+
+            # Verify the lock is now held by thread 2
+            assert thread_lock.is_locked(lock_key)
+            assert thread_lock.lock_value(lock_key) == thread2_id
+
+    def test_rlock_same_thread_different_thread(self, thread_lock: ThreadLock):
+        """Test that the same thread can rlock itself but different threads cannot."""
+        lock_key = "rlock-test-key"
+        thread1_id = "thread-1"
+        thread2_id = "thread-2"
+
+        # Thread 1 acquires the lock
+        assert thread_lock.lock(lock_key, value=thread1_id)
+
+        # Thread 1 can reacquire its own lock with rlock
+        assert thread_lock.rlock(lock_key, value=thread1_id)
+
+        # Thread 2 cannot acquire the lock with either lock or rlock
+        assert not thread_lock.lock(lock_key, value=thread2_id)
+        assert not thread_lock.rlock(lock_key, value=thread2_id)
+
+        # Thread 1 releases the lock
+        thread_lock.unlock(lock_key)
+
+        # Thread 2 can now acquire the lock
+        assert thread_lock.lock(lock_key, value=thread2_id)
 
 
 class TestThreadLockPool:

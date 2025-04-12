@@ -19,6 +19,9 @@ RedisAllocator is an efficient Redis-based distributed memory allocation system.
 - **Health Checking**: Monitors the health of distributed instances and automatically handles unhealthy resources
 - **Garbage Collection**: Automatically identifies and reclaims unused resources, optimizing memory usage
 
+## Documentation
+
+For complete documentation, please visit our [official documentation site](https://invoker-bot.github.io/RedisAllocator-python/).
 
 ## Installation
 
@@ -30,25 +33,59 @@ pip install redis-allocator
 
 ### Using RedisLock for Distributed Locking
 
+RedisLock provides distributed locking with the following important characteristics:
+
+- **Automatic Expiry**: Locks are automatically released after a timeout period, preventing deadlocks when clients fail
+- **Active Update Required**: Lock holders must actively update their locks to maintain ownership
+- **Thread Identification**: Each lock can include a thread identifier to determine ownership
+- **Reentrant Locking**: Same thread/process can reacquire its own locks using the rlock method
+
 ```python
 from redis import Redis
 from redis_allocator import RedisLock
+import threading
+import time
 
-# Initialize Redis client
-redis = Redis(host='localhost', port=6379)
+# Initialize Redis client (requires a single Redis instance)
+redis = Redis(host='localhost', port=6379, decode_responses=True)
 
 # Create a RedisLock instance
 lock = RedisLock(redis, "myapp", "resource-lock")
 
-# Acquire a lock
-if lock.lock("resource-123", timeout=60):
+# Use the current thread ID as the lock identifier
+thread_id = str(threading.get_ident())
+
+# Acquire a lock with a 60-second timeout
+if lock.lock("resource-123", value=thread_id, timeout=60):
     try:
         # Perform operations with the locked resource
         print("Resource locked successfully")
+        
+        # For long-running operations, periodically update the lock
+        # to prevent timeout expiration
+        for _ in range(5):
+            time.sleep(10)  # Do some work
+            
+            # Extend the lock's lifetime by updating it
+            lock.update("resource-123", value=thread_id, timeout=60)
+            print("Lock updated, timeout extended")
+            
+        # Example of reentrant locking with rlock (succeeds because same thread_id)
+        if lock.rlock("resource-123", value=thread_id):
+            print("Successfully re-locked the resource")
     finally:
         # Release the lock when done
         lock.unlock("resource-123")
+        print("Resource unlocked")
+else:
+    print("Could not acquire lock - resource is busy")
 ```
+
+**Key Concepts:**
+- If a lock holder fails to update within the timeout period, the lock is automatically released
+- Using `rlock()` allows the same thread to reacquire a lock it already holds
+- This implementation only works with a single Redis instance (not Redis Cluster)
+- In a distributed system, each node should use a unique identifier as the lock value
 
 ### Using RedisAllocator for Resource Management
 

@@ -19,6 +19,10 @@ RedisAllocator 是一个高效的基于 Redis 的分布式内存分配系统。�
 - **健康检查**: 监控分布式实例的健康状态，自动处理不健康的资源
 - **垃圾回收**: 自动识别和回收未使用的资源，优化内存使用
 
+## 文档
+
+完整文档请访问我们的[官方文档站点](https://invoker-bot.github.io/RedisAllocator-python/)。
+
 ## 安装
 
 ```bash
@@ -29,25 +33,59 @@ pip install redis-allocator
 
 ### 使用 RedisLock 实现分布式锁
 
+RedisLock 提供了具有以下重要特性的分布式锁：
+
+- **自动过期**：锁会在超时时间后自动释放，防止客户端故障时导致的死锁
+- **需要主动更新**：锁的持有者必须主动更新锁以维持所有权
+- **线程标识**：每个锁可以包含线程标识符来确定所有权
+- **可重入锁定**：同一线程/进程可以使用 rlock 方法重新获取自己的锁
+
 ```python
 from redis import Redis
 from redis_allocator import RedisLock
+import threading
+import time
 
-# 初始化 Redis 客户端
-redis = Redis(host='localhost', port=6379)
+# 初始化 Redis 客户端（需要单个 Redis 实例）
+redis = Redis(host='localhost', port=6379, decode_responses=True)
 
 # 创建 RedisLock 实例
 lock = RedisLock(redis, "myapp", "resource-lock")
 
-# 获取锁
-if lock.lock("resource-123", timeout=60):
+# 使用当前线程 ID 作为锁标识符
+thread_id = str(threading.get_ident())
+
+# 获取一个具有 60 秒超时的锁
+if lock.lock("resource-123", value=thread_id, timeout=60):
     try:
         # 使用锁定的资源进行操作
         print("资源锁定成功")
+        
+        # 对于长时间运行的操作，定期更新锁
+        # 以防止超时过期
+        for _ in range(5):
+            time.sleep(10)  # 执行一些工作
+            
+            # 通过更新来延长锁的生命周期
+            lock.update("resource-123", value=thread_id, timeout=60)
+            print("锁已更新，超时时间已延长")
+            
+        # 可重入锁定示例（因为使用相同的 thread_id，所以成功）
+        if lock.rlock("resource-123", value=thread_id):
+            print("成功重新锁定资源")
     finally:
         # 完成后释放锁
         lock.unlock("resource-123")
+        print("资源已解锁")
+else:
+    print("无法获取锁 - 资源正忙")
 ```
+
+**关键概念：**
+- 如果锁持有者在超时时间内未能更新锁，锁会自动释放
+- 使用 `rlock()` 允许同一线程重新获取它已经持有的锁
+- 此实现仅适用于单个 Redis 实例（不适用于 Redis 集群）
+- 在分布式系统中，每个节点应使用唯一标识符作为锁值
 
 ### 使用 RedisAllocator 进行资源管理
 
