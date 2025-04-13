@@ -3,6 +3,19 @@
 This module provides the core functionality of the RedisAllocator system,
 allowing for distributed memory allocation with support for garbage collection,
 thread health checking, and priority-based allocation mechanisms.
+
+Key features:
+1. Shared vs non-shared allocation modes:
+   - In shared mode, allocating an item simply removes it from the free list and puts it back to the tail
+   - In non-shared mode, allocation locks the item to prevent others from accessing it
+2. Garbage collection for stale/unhealthy items:
+   - Items that are locked (unhealthy) but in the free list are removed
+   - Items that are not in the free list but haven't been updated within their timeout are freed
+3. Soft binding mechanism:
+   - Maps object names to allocated keys for consistent allocation
+   - Prioritizes previously allocated keys when the same named object requests allocation
+4. Support for an updater to refresh the pool's keys periodically
+5. Policy-based control of allocation behavior through RedisAllocatorPolicy
 """
 import logging
 import weakref
@@ -218,10 +231,23 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
     """Default implementation of RedisAllocatorPolicy.
 
     This policy provides the following features:
-    1. Garbage collection before allocation
-    2. Soft binding based on object names
-    3. Periodic pool updates using an updater
-    4. Configurable expiry times for pool items
+    1. Garbage collection before allocation: Automatically performs garbage collection
+       operations before allocating resources to ensure stale resources are reclaimed.
+
+    2. Soft binding prioritization: Prioritizes allocation of previously bound keys
+       for named objects, creating a consistent mapping between object names and keys.
+       If a soft binding exists but the bound key is no longer in the pool, the binding is
+       ignored and a new key is allocated.
+
+    3. Periodic pool updates: Uses an optional updater to refresh the pool's keys at
+       configurable intervals. Only one process/thread (the one that acquires the update lock)
+       will perform the update.
+
+    4. Configurable expiry times: Allows setting default expiry durations for pool items,
+       ensuring automatic cleanup of stale resources even without explicit garbage collection.
+
+    The policy controls when garbage collection happens, when the pool is refreshed with new keys,
+    and how allocation prioritizes resources.
     """
 
     def __init__(self, gc_count: int = 5, update_interval: int = 300,
@@ -295,7 +321,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
                 # If the bound key doesn't exist in the pool, continue with regular allocation
 
         # Fall back to regular allocation
-        key = allocator.malloc_key(timeout)
+        key = allocator.malloc_key(timeout, obj)
         if key is None:
             return None
 
@@ -349,6 +375,30 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     It manages a pool of resources that can be allocated, freed, and garbage collected.
     The implementation uses a doubly-linked list structure stored in Redis hashes to
     track available and allocated resources.
+
+    Allocation Modes:
+    - Shared mode (shared=True): Resources can be shared across multiple clients. When allocated,
+      items are removed from the free list head and placed back on the tail without locking.
+      This allows multiple clients to access the same resource concurrently.
+    - Non-shared mode (shared=False): Resources are locked when allocated, preventing other
+      clients from accessing them until they are freed or their lock times out.
+
+    Soft Binding:
+    Objects implementing RedisAllocatableClass with a non-None name property can use soft binding,
+    which creates a mapping between the object name and an allocated key. Subsequent allocation
+    requests with the same named object will try to reuse the previously allocated key,
+    providing consistent resource allocation for the same logical entity.
+
+    Garbage Collection:
+    The allocator includes a garbage collection mechanism that:
+    1. Removes items from the free list that are locked (unhealthy)
+    2. Returns items to the free list if their locks have expired
+    3. Removes items with explicit expiry times that have elapsed
+
+    Allocation Policies:
+    The allocator supports customizable allocation policies through the RedisAllocatorPolicy
+    interface, allowing for custom allocation strategies, automatic pool updates, and
+    garbage collection scheduling.
 
     Generic type U must implement the RedisContextableObject protocol, allowing
     allocated objects to be used as context managers.
@@ -662,6 +712,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     def update_soft_bind(self, name: str, key: str):
         """Update a soft binding between a name and a resource.
 
+        Soft bindings create a persistent mapping between named objects and allocated keys,
+        allowing the same key to be consistently allocated to the same named object.
+        This is useful for maintaining affinity between objects and their resources.
+
         Args:
             name: Name to bind
             key: Resource identifier to bind to the name
@@ -670,6 +724,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def unbind_soft_bind(self, name: str):
         """Remove a soft binding.
+
+        This removes the persistent mapping between a named object and its allocated key,
+        allowing the key to be freely allocated to any requestor.
 
         Args:
             name: Name of the soft binding to remove
@@ -702,6 +759,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     def malloc_key(self, timeout: Timeout = 120, obj: Optional[U] = None) -> Optional[str]:
         """Allocate a resource key from the pool.
+
+        The behavior depends on the allocator's shared mode:
+        - In non-shared mode (default): Locks the allocated key for exclusive access
+        - In shared mode: Simply removes the key from the free list without locking it
 
         Args:
             timeout: How long the allocation should be valid (in seconds)
