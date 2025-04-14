@@ -17,6 +17,7 @@ Key features:
 4. Support for an updater to refresh the pool's keys periodically
 5. Policy-based control of allocation behavior through RedisAllocatorPolicy
 """
+import atexit
 import logging
 import weakref
 from abc import ABC, abstractmethod
@@ -91,6 +92,10 @@ class RedisAllocatableClass(ABC):
         """
         pass
 
+    def open(self):
+        """Open the object."""
+        pass
+
     def close(self):
         """close the object."""
         pass
@@ -102,6 +107,11 @@ class RedisAllocatableClass(ABC):
     def name(self) -> Optional[str]:
         """Get the cache name of the object, if is none no soft binding will be used."""
         return None
+    
+    @property
+    def unique_id(self) -> str:
+        """Get the unique ID of the object."""
+        return ""
 
 
 U = TypeVar('U', bound=RedisAllocatableClass)
@@ -150,8 +160,28 @@ class RedisAllocatorObject(Generic[U]):
         if self.obj is not None:
             self.obj.close()
 
-    # def refresh(self):
-    #     """Refresh the object."""
+    def set_unhealthy(self, duration: int = 3600):
+        """Set the object as unhealthy."""
+        if self.obj is not None and self.obj.name is not None:
+            self.allocator.unbind_soft_bind(self.obj.name)
+        self.allocator.update(self.key, timeout=duration)
+
+    def refresh(self, timeout: Timeout = 120):
+        """Refresh the object."""
+        self.close()
+        new_obj = self.allocator.policy.malloc(self.allocator, timeout=timeout,
+                                               obj=self.obj, params=self.params)
+        if new_obj is not None:
+            self.obj = new_obj.obj
+            self.key = new_obj.key
+            self.params = new_obj.params
+
+    @property
+    def unique_id(self) -> str:
+        """Get the unique ID of the object."""
+        if self.obj is None:
+            return self.key
+        return f"{self.key}:{self.obj.unique_id}"
 
     def __del__(self):
         """Delete the object."""
@@ -264,8 +294,9 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         self.update_interval: float = update_interval
         self.expiry_duration: float = expiry_duration
         self.updater = updater
-        self._allocator: Optional['RedisAllocator'] = None
+        self._allocator: Optional[weakref.ReferenceType['RedisAllocator']] = None
         self._update_lock_key: Optional[str] = None
+        self.objects: weakref.WeakValueDictionary[str, RedisAllocatorObject] = weakref.WeakValueDictionary()
 
     def initialize(self, allocator: 'RedisAllocator'):
         """Initialize the policy with an allocator instance.
@@ -275,6 +306,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         """
         self._allocator = weakref.ref(allocator)
         self._update_lock_key = f"{allocator._pool_str()}|policy_update_lock"
+        atexit.register(lambda: self.finalize(self._allocator()))
 
     def malloc(self, allocator: 'RedisAllocator', timeout: Timeout = 120,
                obj: Optional[Any] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject]:
@@ -302,7 +334,12 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
 
         # Fall back to regular allocation
         key = allocator.malloc_key(timeout, obj.name if obj else None)
-        return RedisAllocatorObject(allocator, key, obj, params)
+        obj = RedisAllocatorObject(allocator, key, obj, params)
+        old_obj = self.objects.get(obj.unique_id, None)
+        if old_obj is not None:
+            old_obj.close()
+        self.objects[obj.unique_id] = obj
+        return obj
 
     def _try_refresh_pool(self, allocator: 'RedisAllocator'):
         """Try to refresh the pool if necessary and if we can acquire the lock.
@@ -336,6 +373,11 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
             allocator.assign(keys, timeout=self.expiry_duration)
         else:
             allocator.extend(keys, timeout=self.expiry_duration)
+
+    def finalize(self, allocator: 'RedisAllocator'):
+        """Finalize the policy."""
+        for obj in self.objects.values():
+            obj.close()
 
 
 class RedisAllocator(RedisLockPool, Generic[U]):
@@ -389,7 +431,6 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         super().__init__(redis, prefix, suffix=suffix, eps=eps)
         self.shared = shared
         self.soft_bind_timeout = 3600  # Default timeout for soft bindings (1 hour)
-        self.objects: weakref.WeakValueDictionary[str, RedisAllocatorObject] = weakref.WeakValueDictionary()
         self.policy = policy or DefaultRedisAllocatorPolicy()
         self.policy.initialize(self)
 

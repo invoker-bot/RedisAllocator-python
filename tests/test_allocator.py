@@ -259,7 +259,6 @@ class TestRedisAllocator:
     def test_initialization(self, redis_client: Redis):
         """Test the initialization of RedisAllocator."""
         allocator = RedisAllocator(redis_client, 'test', 'alloc')
-        assert len(allocator.objects) == 0
         assert allocator.shared is False
         assert allocator.soft_bind_timeout > 0 
     
