@@ -319,6 +319,10 @@ class RedisLock(BaseLock):
 
     @property
     def _lua_required_string(self):
+        """LUA script containing helper functions for Redis operations.
+
+        - key_str(key: str) -> str: Get Redis key for a given key
+        """
         return f'''
         local function key_str(key)
             return '{self.prefix}|{self.suffix}:' .. key
@@ -444,6 +448,11 @@ class RedisLockPool(RedisLock, BaseLockPool):
 
     @property
     def _lua_required_string(self):
+        """LUA script containing helper functions for Redis operations.
+
+        - key_str(key: str) -> str: Get Redis key for a given key
+        - pool_str() -> str: Get Redis key for the pool
+        """
         return f'''
         {super()._lua_required_string}
         local function pool_str()
@@ -469,8 +478,9 @@ class RedisLockPool(RedisLock, BaseLockPool):
     def _assign_lua_string(self):
         return f'''
         {self._lua_required_string}
-        redis.call('DEL', pool_str())
-        redis.call('SADD', pool_str(), unpack(ARGV))
+        local _pool_str = KEYS[1]
+        redis.call('DEL', _pool_str)
+        redis.call('SADD', _pool_str, unpack(ARGV))
         '''
 
     @cached_property
@@ -480,7 +490,7 @@ class RedisLockPool(RedisLock, BaseLockPool):
     def assign(self, keys: Optional[Sequence[str]] = None):
         """Assign keys to the pool, replacing any existing keys."""
         if keys is not None and len(keys) > 0:
-            self._assign_lua_script(args=keys)
+            self._assign_lua_script(args=keys, keys=[self._pool_str()])
         else:
             self.clear()
 
