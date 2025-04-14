@@ -2,9 +2,24 @@
 
 ## Project Overview
 
-RedisAllocator is an efficient Redis-based distributed memory allocation system. This system simulates traditional memory allocation mechanisms but implements them in a distributed environment, using Redis as the underlying storage and coordination tool.
+RedisAllocator provides robust and efficient components for managing distributed resources using Redis. It's designed specifically for scenarios requiring high availability, automatic recovery, and flexible allocation strategies, such as managing pools of proxies, workers, or other limited resources.
 
-> **Note**: Currently, RedisAllocator only supports single Redis instance deployments. For Redis cluster environments, we recommend using RedLock for distributed locking operations.
+The core philosophy is to leverage Redis's speed and atomic Lua scripting capabilities to ensure consistency and performance for resource allocation, locking, and task queuing, while operating within a single Redis instance for simplicity and atomicity guarantees.
+
+> **Note**: RedisAllocator is optimized for single Redis instance deployments. Its reliance on Lua scripting for atomicity makes it unsuitable for standard Redis Cluster configurations. For cluster environments, consider alternative locking mechanisms like RedLock.
+
+## Core Design Principles & Features
+
+RedisAllocator is built around these key ideas:
+
+-   **Efficient Resource Pooling:** Manages a pool of available resources, enabling clients to check out (allocate) and return (free) resources.
+-   **Atomic Operations:** Utilizes Redis Lua scripts extensively to guarantee atomicity for critical pool management operations, preventing race conditions in distributed environments.
+-   **Automatic Recovery (Garbage Collection):** Implements configurable garbage collection to automatically detect and recycle resources that are no longer in use (e.g., due to client crashes or expired locks), crucial for maintaining pool health.
+-   **Flexible Allocation Modes:** Supports both **exclusive** (`shared=False`, default) allocation where a resource is locked for one client, and **shared** (`shared=True`) allocation where multiple clients can use the same resource concurrently.
+-   **Resource Prioritization (Planned):** A key upcoming feature allowing resources to be allocated based on defined priorities (e.g., allocating faster proxies first), using Redis Sorted Sets.
+-   **Resource Affinity (Soft Binding):** Allows associating specific names (e.g., a worker ID or a specific task type) with resources, enabling consistent reuse of the same resource for that name, useful for caching or specialized tasks.
+-   **Distributed Locking:** Provides a standalone, robust distributed lock (`RedisLock`) with automatic expiry and reentrancy support.
+-   **Task Queuing:** Includes a basic distributed task queue (`RedisTaskQueue`) for coordinating work among multiple consumers.
 
 ### Core Features
 
@@ -419,33 +434,32 @@ The RedisAllocator maintains resources in a doubly-linked list structure stored 
 
 ## Roadmap
 
-### Phase 1 (Completed)
-- [x] Distributed lock mechanism implementation
-- [x] Task queue processing system
-- [x] Resource allocation and management
-- [x] Basic health checking and monitoring
-- [x] Object allocation with serialization
-- [x] Unit tests for core components
+*   **Core Focus & Recently Completed:**
+    *   [x] Distributed Lock (`RedisLock`, `RedisLockPool`)
+    *   [x] Resource Allocator (`RedisAllocator`) - Exclusive & Shared modes.
+    *   [x] Task Queue (`RedisTaskQueue`)
+    *   [x] Soft Binding Mechanism
+    *   [x] Basic Garbage Collection & Health Checking Foundation
+    *   [x] Documentation Improvements (Shared Mode, Soft Binding, Lua Clarity)
+    *   [x] Foundational Unit Tests & Allocation Mode Coverage
 
-### Phase 2 (In Progress)
-- [x] Improved documentation for shared mode
-- [x] Enhanced soft binding mechanism 
-- [x] Comprehensive test coverage for allocation modes
-- [ ] Advanced sharding implementation
-- [ ] Performance optimization and benchmarking
-- [ ] Enhanced error handling and recovery
+*   **Current Development Priorities (Focusing on Proxy Pool Needs):**
+    *   [ ] **Resource Prioritization:** Implement priority-based allocation in `RedisAllocator`, likely using Redis Sorted Sets (`ZSET`) for the free pool. *(New - High Priority)*
+    *   [ ] **Enhanced GC & Health Checking:** Improve configurability (triggers, timeouts) and potentially add hooks for custom health validation logic. Make GC more robust for scenarios like proxy failures. *(Enhanced - High Priority)*
+    *   [ ] **Performance Benchmarking & Optimization:** Profile core allocation, GC, and locking operations under simulated proxy pool load. Optimize Lua scripts and Python code. *(Existing - Medium Priority, relevant for performance)*
+    *   [ ] **Enhanced Observability:** Add metrics for allocation rates, pool size, GC activity, lock contention, and soft binding usage. Improve logging. *(Existing - Medium Priority, crucial for monitoring)*
 
-### Phase 3 (Planned)
-- [ ] Advanced garbage collection strategies
-- [ ] Redis cluster support
-- [ ] Fault recovery mechanisms
-- [ ] Automated resource scaling
+*   **Future Enhancements (Single-Instance Focus):**
+    *   **Soft Binding Helpers:** Add API methods like `get_bindings_for_key` to easily manage the proxy-to-item relationships used in the fast update mode. *(New - Medium Priority)*
+    *   **Refined Error Handling & Recovery:** Define specific exceptions and improve robustness against Redis issues or inconsistent states. *(Existing - Medium Priority)*
+    *   **Task Queue Improvements:** Consider task prioritization, retries, delayed tasks, batch processing, dead-letter queues (Lower priority relative to core allocator needs for now).
+    *   **Advanced Allocator Features:** Fairness algorithms, resource weighting, custom metadata storage (Lower priority).
+    *   **Locking Enhancements:** Contention diagnostics, fairness options (Lower priority).
+    *   **Developer Experience:** Enhanced debugging, more complex examples (like a simplified proxy manager pattern).
 
-### Phase 4 (Future)
-- [ ] API stability and backward compatibility
-- [ ] Performance monitoring and tuning tools
-- [ ] Advanced features (transaction support, data compression, etc.)
-- [ ] Production environment validation and case studies
+*   **Out of Scope (Current Direction):**
+    *   Native Redis Cluster support.
+    *   Multi-key atomic operations beyond single-instance Lua capabilities.
 
 ## Contributing
 

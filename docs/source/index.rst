@@ -15,6 +15,7 @@ environment, using Redis as the underlying storage and coordination tool.
 
    installation
    getting_started
+   examples/proxy_pool
    api/index
    changelog
    git_history
