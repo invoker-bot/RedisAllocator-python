@@ -300,39 +300,9 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         # Perform GC operations before allocation
         allocator.gc(self.gc_count)
 
-        # Check for soft binding based on object name
-        if obj is not None and obj.name is not None:
-            # Check if there's a soft binding for this name
-            bind_key = allocator._soft_bind_name(obj.name)
-            bound_key = allocator.lock_value(bind_key)
-
-            if bound_key:
-                # Verify that the bound key exists in the pool
-                if bound_key in allocator:
-                    # Update the binding with a new timeout
-                    allocator.update_soft_bind(obj.name, bound_key)
-
-                    # Allocate the bound key with the specified timeout
-                    allocator.update(bound_key, timeout=timeout)
-
-                    # Create a new allocator object with the bound key
-                    return RedisAllocatorObject(allocator, bound_key, obj, params)
-
-                # If the bound key doesn't exist in the pool, continue with regular allocation
-
         # Fall back to regular allocation
-        key = allocator.malloc_key(timeout, obj)
-        if key is None:
-            return None
-
-        # Create the allocator object
-        alloc_obj = RedisAllocatorObject(allocator, key, obj, params)
-
-        # If the object has a name, create a soft binding
-        if obj is not None and obj.name is not None:
-            allocator.update_soft_bind(obj.name, key)
-
-        return alloc_obj
+        key = allocator.malloc_key(timeout, obj.name if obj else None)
+        return RedisAllocatorObject(allocator, key, obj, params)
 
     def _try_refresh_pool(self, allocator: 'RedisAllocator'):
         """Try to refresh the pool if necessary and if we can acquire the lock.
@@ -441,25 +411,24 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         pointer_type = 'head' if head else 'tail'
         return f'{self._pool_str()}|{pointer_type}'
 
-    def _gc_cursor_str(self):
-        """Get the Redis key for the garbage collection cursor.
-
-        Returns:
-            String representation of the Redis key for the GC cursor
-        """
-        return f'{self._pool_str()}|gc_cursor'
-
     @property
     def _lua_required_string(self):
         """LUA script containing helper functions for Redis operations.
 
         This script defines various LUA functions for manipulating the doubly-linked list
         structure that represents the allocation pool:
-        - pool_pointer_str: Get Redis keys for head/tail pointers
-        - gc_cursor_str: Get Redis key for GC cursor
-        - push_to_tail: Add an item to the tail of the linked list
-        - pop_from_head: Remove and return the item at the head of the linked list
-        - set_item_allocated: Set an item as allocated
+        - key_str(key: str) -> str: Get Redis key for a given key
+        - pool_str() -> str: Get Redis key for the pool
+        - pool_pointer_str(head: bool) -> str: Get Redis keys for head/tail pointers
+        - cache_str() -> str: Get Redis key for the cache
+        - timeout_to_expiry(timeout: int) -> int: Convert a timeout to an expiry
+        - is_expiry_invalid(expiry: int) -> bool: Check if an expiry is invalid
+        - is_expired(value: str) -> bool: Check if a value is expired
+        - split_pool_value(value: str) -> tuple: Split a pool value into prev, next, and expiry
+        - join_pool_value(prev: str, next: str, expiry: int) -> str: Join a pool value into a string
+        - push_to_tail(itemName: str, expiry: int) -> None: Add an item to the tail of the linked list
+        - pop_from_head() -> [str, int]: Remove and return the item at the head of the linked list
+        - set_item_allocated(itemName: str) -> None: Set an item as allocated
         """
         return f'''
         {super()._lua_required_string}
@@ -470,11 +439,14 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             end
             return '{self._pool_str()}|' .. pointer_type
         end
-        local function gc_cursor_str()
-            return '{self._pool_str()}|gc_cursor'
-        end
         local function cache_str()
             return '{self._cache_str}'
+        end
+        local function soft_bind_name(name)
+            if name == "" then
+                return ""
+            end
+            return cache_str() .. ':bind:' .. name
         end
         local function split_pool_value(value)
             if value == nil then
@@ -490,6 +462,12 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             end
             return tostring(prev) .. "||" .. tostring(next) .. "||" .. tostring(expiry)
         end
+        local function timeout_to_expiry(timeout)
+            if timeout == nil or timeout <= 0 then
+                return -1
+            end
+            return os.time() + timeout
+        end
         local function is_expiry_invalid(expiry)
             return expiry ~= nil and expiry > 0 and expiry <= os.time()
         end
@@ -500,14 +478,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local poolItemsKey = pool_str()
         local headKey      = pool_pointer_str(true)
         local tailKey      = pool_pointer_str(false)
-        local function push_to_tail(itemName, timeout)  -- push the item to the free list
+        local function push_to_tail(itemName, expiry)  -- push the item to the free list
             local tail = redis.call("GET", tailKey)
             if not tail then
                 tail = ""
-            end
-            local expiry = -1
-            if timeout ~= nil and timeout > 0 then
-                expiry = os.time() + timeout
             end
             redis.call("HSET", poolItemsKey, itemName, join_pool_value(tail, "", expiry))
             if tail == "" then  -- the free list is empty chain
@@ -523,7 +497,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local function pop_from_head()  -- pop the item from the free list
             local head = redis.call("GET", headKey)
             if head == nil or head == "" then  -- the free list is empty
-                return nil
+                return nil, -1
             end
             local headVal = redis.call("HGET", poolItemsKey, head)
             assert(headVal ~= nil, "head should not nil")
@@ -533,7 +507,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 redis.call("HDEL", poolItemsKey, head)
                 return pop_from_head()
             end
-            if redis.call("EXISTS", key_str(head)) == 1 then  -- the item is locked
+            if redis.call("EXISTS", key_str(head)) then  -- the item is locked
                 return pop_from_head()
             end
             local prev, next, expiry = split_pool_value(headVal)
@@ -546,13 +520,13 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 redis.call("HSET", poolItemsKey, next, join_pool_value("", nextNext, nextExpiry))
                 redis.call("SET", headKey, next)
             end
-            return head
+            return head, headExpiry
         end
         local function set_item_allocated(itemName)
             local val = redis.call("HGET", poolItemsKey, itemName)
             if val ~= nil then
                 local prev, next, expiry = split_pool_value(val)
-                if prev ~= '#ALLOCATED' then
+                if prev ~= "#ALLOCATED" then
                     if is_expiry_invalid(expiry) then
                         redis.call("HDEL", poolItemsKey, itemName)
                     end
@@ -578,21 +552,46 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 end
             end
         end
+        local function check_item_health(itemName, value)
+            if value == nil then
+                value = redis.call("HGET", pool_str(), itemName)
+            end
+            if value then
+                local prev, next, expiry = split_pool_value(value)
+                if prev == "#ALLOCATED" then
+                    local locked = redis.call("EXISTS", key_str(itemName))
+                    if not locked then
+                        push_to_tail(itemName, expiry)
+                    end
+                else
+                    -- Check if the item has expired
+                    if is_expiry_invalid(expiry) then
+                        set_item_allocated(itemName)
+                        redis.call("HDEL", poolItemsKey, itemName)
+                    else
+                        local locked = redis.call("EXISTS", key_str(itemName))
+                        if locked then
+                            set_item_allocated(itemName)
+                        end
+                    end
+                end
+            end
+        end
         '''
 
     @cached_property
     def _extend_script(self):
         """Cached Redis script for extending the allocation pool."""
-        return self.redis.register_script(f'''{self._lua_required_string}
+        return self.redis.register_script(f'''{self._lua_required_string}\n
         local timeout = tonumber(ARGV[1] or -1)
-        local expiry = os.time() + timeout
+        local expiry = timeout_to_expiry(timeout)
         for i=2, #ARGV do
             local itemName = ARGV[i]
             local val = redis.call("HGET", poolItemsKey, itemName)
             if val == nil then
-                push_to_tail(itemName, timeout)
+                push_to_tail(itemName, expiry)
             else -- refresh the expiry timeout
-                local prev, next, expiry = split_pool_value(val)
+                local prev, next, _ = split_pool_value(val)
                 redis.call("HSET", poolItemsKey, itemName, join_pool_value(prev, next, expiry))
             end
         end''')
@@ -605,7 +604,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             timeout: Optional timeout in seconds for the pool items (-1 means no timeout)
         """
         if keys is not None and len(keys) > 0:
-            self._extend_script(args=[timeout] + list(keys))
+            # Ensure timeout is integer for Lua script
+            int_timeout = timeout if timeout is not None else -1
+            self._extend_script(args=[int_timeout] + list(keys))
 
     @cached_property
     def _shrink_script(self):
@@ -631,6 +632,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """Cached Redis script for assigning resources to the allocation pool."""
         return self.redis.register_script(f'''{self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
+        local expiry = timeout_to_expiry(timeout)
         local assignSet  = {{}}
         for i=2, #ARGV do
             local k = ARGV[i]
@@ -647,7 +649,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         end
         for k, v in pairs(assignSet) do
             if v then
-                push_to_tail(k, timeout)
+                push_to_tail(k, expiry)
             end
         end
         ''')
@@ -740,24 +742,47 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         {self._lua_required_string}
         local shared = {1 if self.shared else 0}
         local timeout = tonumber(ARGV[1])
-        local itemName = pop_from_head()
-        if itemName ~= nil then
-            if redis.call("EXISTS", key_str(itemName)) == 1 then
-                itemName = nil
-            else
-                if not shared then
-                    if timeout ~= nil then
-                        redis.call("SET", key_str(itemName), "1", "EX", timeout)
-                    else
-                        redis.call("SET", key_str(itemName), "1")
-                    end
+        local cacheName = soft_bind_name(ARGV[2])
+        local cacheTimeout = tonumber(ARGV[3])
+        local function refresh_cache(cacheKey)
+            if cacheName then
+                if cacheTimeout ~= nil and cacheTimeout > 0 then
+                    redis.call("SET", cacheName, cacheKey, "EX", cacheTimeout)
+                else
+                    redis.call("SET", cacheName, cacheKey)
                 end
             end
+        end
+        if name == "" then
+            local cachedKey = redis.call("GET", cacheName)
+            if cachedKey then
+                if redis.call("EXISTS", key_str(cachedKey)) then
+                    redis.call("DEL", cacheName)
+                else
+                    refresh_cache(cachedKey)
+                    return cachedKey
+                end
+            end
+        end
+        local itemName, expiry = pop_from_head()
+        if itemName ~= nil then
+            if not shared then
+                if timeout ~= nil and timeout > 0 then
+                    redis.call("SET", key_str(itemName), "1", "EX", timeout)
+                else
+                    redis.call("SET", key_str(itemName), "1")
+                end
+            else
+                push_to_tail(itemName, expiry)
+            end
+        end
+        if itemName then
+            refresh_cache(itemName)
         end
         return itemName
         ''')
 
-    def malloc_key(self, timeout: Timeout = 120, obj: Optional[U] = None) -> Optional[str]:
+    def malloc_key(self, timeout: Timeout = 120, name: Optional[str] = None) -> Optional[str]:
         """Allocate a resource key from the pool.
 
         The behavior depends on the allocator's shared mode:
@@ -771,7 +796,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         Returns:
             Resource identifier if allocation was successful, None otherwise
         """
-        return self._malloc_script(args=[self._to_seconds(timeout)])
+        if name is None:
+            name = ""
+        return self._malloc_script(args=[self._to_seconds(timeout), name])
 
     def malloc(self, timeout: Timeout = 120, obj: Optional[U] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject[U]]:
         """Allocate a resource from the pool and wrap it in a RedisAllocatorObject.
@@ -789,10 +816,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         if self.policy:
             return self.policy.malloc(self, timeout, obj, params)
-
-        key = self.malloc_key(timeout, obj)
-        if key is None:
-            return None
+        name = obj.name if obj else None
+        key = self.malloc_key(timeout, name)
         return RedisAllocatorObject(self, key, obj, params)
 
     @cached_property
@@ -801,10 +826,11 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         return self.redis.register_script(f'''
         {self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
+        local expiry = timeout_to_expiry(timeout)
         for i=2, #ARGV do
             local k = ARGV[i]
             redis.call('DEL', key_str(k))
-            push_to_tail(k, timeout)
+            push_to_tail(k, expiry)
         end
         ''')
 
@@ -827,43 +853,41 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         self.free_keys(obj.key, timeout=timeout)
 
+    def _gc_cursor_str(self):
+        """Get the Redis key for the garbage collection cursor.
+
+        Returns:
+            String representation of the Redis key for the GC cursor
+        """
+        return f'{self._pool_str()}|gc_cursor'
+
     @cached_property
     def _gc_script(self):
         """Cached Redis script for garbage collection."""
         return self.redis.register_script(f'''
         {self._lua_required_string}
-        local n = tonumber(ARGV[1])
-        local cursorKey = gc_cursor_str()
-        local oldCursor = redis.call("GET", cursorKey)
-        if not oldCursor or oldCursor == "" then
-            oldCursor = "0"
+        local cursorKey = '{self._gc_cursor_str()}'
+        local function get_cursor()
+            local oldCursor = redis.call("GET", cursorKey)
+            if not oldCursor or oldCursor == "" then
+                return "0"
+            else
+                return oldCursor
+            end
         end
-        local scanResult = redis.call("HSCAN", poolItemsKey, oldCursor, "COUNT", n)
+        local function set_cursor(cursor)
+            redis.call("SET", cursorKey, cursor)
+        end
+        local n = tonumber(ARGV[1])
+        local scanResult = redis.call("HSCAN", pool_str(), get_cursor(), "COUNT", n)
         local newCursor  = scanResult[1]
         local kvList     = scanResult[2]
         for i = 1, #kvList, 2 do
             local itemName = kvList[i]
             local val      = kvList[i + 1]
-            local prev, next, expiry = split_pool_value(val)
-            if prev == "#ALLOCATED" then
-                local locked = redis.call("EXISTS", key_str(itemName))
-                if not locked then
-                    push_to_tail(itemName, -1)
-                end
-            else
-                -- Check if the item has expired
-                if is_expiry_invalid(expiry) then
-                    set_item_allocated(itemName)
-                    redis.call("HDEL", poolItemsKey, itemName)
-                else
-                    local locked = redis.call("EXISTS", key_str(itemName))
-                    if locked then
-                        set_item_allocated(itemName)
-                    end
-                end
-            end
+            check_item_health(itemName, val)
         end
-        redis.call("SET", cursorKey, newCursor)
+        set_cursor(newCursor)
         ''')
 
     def gc(self, count: int = 10):

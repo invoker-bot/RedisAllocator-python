@@ -118,7 +118,7 @@ def test_object() -> _TestObject:
 
 
 @pytest.fixture
-def allocator(redis_client: Redis) -> RedisAllocator:
+def redis_allocator(redis_client: Redis) -> RedisAllocator:
     """Create a RedisAllocator instance for testing."""
     alloc = RedisAllocator(
         redis_client,

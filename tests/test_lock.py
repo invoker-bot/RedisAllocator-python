@@ -41,9 +41,9 @@ class TestRedisLock:
         ttl = redis_client.ttl(redis_lock._key_str("test-key"))
         assert 55 <= ttl <= 60
 
-    def test_lock_value(self, redis_lock: RedisLock, redis_client: Redis):
+    def test_lock_value(self, redis_lock: RedisLock):
         """Test the lock_value method."""
-        redis_client.set(redis_lock._key_str("test-key"), "120")
+        redis_lock.lock("test-key", value="120")
         assert redis_lock.lock_value("test-key") == "120"
 
     def test_is_locked(self, redis_lock: RedisLock, redis_client: Redis):
@@ -502,7 +502,7 @@ class TestRedisLockPool:
         keys = redis_lock_pool.keys()
         assert sorted(list(keys)) == ["key1", "key2"]
 
-    def test_extend(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_extend(self, redis_lock_pool: RedisLockPool):
         """Test the extend method with keys."""
         redis_lock_pool.extend(["key1", "key2"])
 
@@ -510,7 +510,7 @@ class TestRedisLockPool:
         assert "key1" in redis_lock_pool
         assert "key2" in redis_lock_pool
 
-    def test_shrink(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_shrink(self, redis_lock_pool: RedisLockPool):
         """Test the shrink method."""
         # First add keys
         redis_lock_pool.extend(["key1", "key2", "key3"])
@@ -523,7 +523,7 @@ class TestRedisLockPool:
         assert "key2" not in redis_lock_pool
         assert "key3" in redis_lock_pool
 
-    def test_clear(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_clear(self, redis_lock_pool: RedisLockPool):
         """Test the clear method."""
         # First add keys
         redis_lock_pool.extend(["key1", "key2"])
@@ -534,7 +534,7 @@ class TestRedisLockPool:
         # Verify all keys were removed
         assert len(redis_lock_pool) == 0
 
-    def test_assign(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_assign(self, redis_lock_pool: RedisLockPool):
         """Test the assign method."""
         # First add some initial keys
         redis_lock_pool.extend(["old1", "old2"])
@@ -548,7 +548,7 @@ class TestRedisLockPool:
         assert "key1" in redis_lock_pool
         assert "key2" in redis_lock_pool
 
-    def test_contains(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_contains(self, redis_lock_pool: RedisLockPool):
         """Test the __contains__ method."""
         # Add a key
         redis_lock_pool.extend(["key1"])
@@ -557,7 +557,7 @@ class TestRedisLockPool:
         assert "key1" in redis_lock_pool
         assert "key2" not in redis_lock_pool
 
-    def test_len(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_len(self, redis_lock_pool: RedisLockPool):
         """Test the __len__ method."""
         # Add some keys
         redis_lock_pool.extend(["key1", "key2", "key3"])
@@ -565,9 +565,7 @@ class TestRedisLockPool:
         # Test __len__
         assert len(redis_lock_pool) == 3
 
-    def test_get_set_del_item(
-        self, redis_lock_pool: RedisLockPool, redis_client: Redis
-    ):
+    def test_get_set_del_item(self, redis_lock_pool: RedisLockPool):
         """Test the __getitem__, __setitem__, and __delitem__ methods."""
         # First test extend to add a key
         redis_lock_pool.extend(["key1"])
@@ -579,7 +577,7 @@ class TestRedisLockPool:
         redis_lock_pool.shrink(["key1"])
         assert "key1" not in redis_lock_pool
 
-    def test_health_check(self, redis_lock_pool: RedisLockPool, redis_client: Redis):
+    def test_health_check(self, redis_lock_pool: RedisLockPool):
         """Test the health_check method."""
         # Add some keys
         redis_lock_pool.extend(["key1", "key2", "key3"])
