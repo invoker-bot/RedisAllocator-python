@@ -220,7 +220,8 @@ print(f"First allocation: {allocation1.key}")  # e.g., "resource-1"
 allocator.free(allocation1)
 
 # Later allocation of the same named object will try to reuse the same key
-allocation2 = allocator.malloc(timeout=60, obj=resource)
+# Can specify a custom cache timeout for the binding
+allocation2 = allocator.malloc(timeout=60, obj=resource, cache_timeout=300)
 print(f"Second allocation: {allocation2.key}")  # Will be "resource-1" again
 
 # Benefits of soft binding:
@@ -280,7 +281,9 @@ RedisAllocator consists of several modules, each providing specific functionalit
 
 - **lock.py**: Provides `RedisLock` and `RedisLockPool` for distributed locking mechanisms
 - **task_queue.py**: Implements `RedisTaskQueue` for distributed task processing
-- **allocator.py**: Contains `RedisAllocator` and `RedisThreadHealthChecker` for resource allocation
+- **allocator.py**: Contains `RedisAllocator` and related classes for resource allocation
+
+*(Note: Internal comments and Lua script explanations within these modules have been recently refactored for better clarity.)*
 
 ### RedisAllocator Architecture
 

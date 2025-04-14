@@ -220,7 +220,8 @@ print(f"第一次分配: {allocation1.key}")  # 例如 "resource-1"
 allocator.free(allocation1)
 
 # 稍后对相同命名对象的分配将尝试重用相同的键
-allocation2 = allocator.malloc(timeout=60, obj=resource)
+# 可以为绑定指定自定义缓存超时时间
+allocation2 = allocator.malloc(timeout=60, obj=resource, cache_timeout=300)
 print(f"第二次分配: {allocation2.key}")  # 将再次是 "resource-1"
 
 # 软绑定的好处:
@@ -276,11 +277,13 @@ task_queue.listen(
 
 ## 模块
 
-RedisAllocator 由几个模块组成，每个模块提供特定功能：
+RedisAllocator 包含以下几个模块，每个模块提供特定的功能：
 
-- **lock.py**：提供分布式锁机制的 `RedisLock` 和 `RedisLockPool`
-- **task_queue.py**：实现分布式任务处理的 `RedisTaskQueue`
-- **allocator.py**：包含用于资源分配的 `RedisAllocator` 和 `RedisThreadHealthChecker`
+- **lock.py**: 提供 `RedisLock` 和 `RedisLockPool` 用于分布式锁机制
+- **task_queue.py**: 实现 `RedisTaskQueue` 用于分布式任务处理
+- **allocator.py**: 包含 `RedisAllocator` 及相关类用于资源分配
+
+*(注意：这些模块内部的注释和 Lua 脚本解释最近经过重构，以提高清晰度。)*
 
 ### RedisAllocator 架构
 

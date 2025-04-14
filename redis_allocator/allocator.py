@@ -107,7 +107,7 @@ class RedisAllocatableClass(ABC):
     def name(self) -> Optional[str]:
         """Get the cache name of the object, if is none no soft binding will be used."""
         return None
-    
+
     @property
     def unique_id(self) -> str:
         """Get the unique ID of the object."""
@@ -231,7 +231,8 @@ class RedisAllocatorPolicy(ABC):
 
     @abstractmethod
     def malloc(self, allocator: 'RedisAllocator', timeout: Timeout = 120,
-               obj: Optional[Any] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject]:
+               obj: Optional[Any] = None, params: Optional[dict] = None,
+               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject]:
         """Allocate a resource according to the policy.
 
         Args:
@@ -239,6 +240,8 @@ class RedisAllocatorPolicy(ABC):
             timeout: How long the allocation should be valid (in seconds)
             obj: The object to associate with the allocation
             params: Additional parameters for the allocation
+            cache_timeout: Timeout for the soft binding cache entry (seconds).
+                       Defaults to 3600.
 
         Returns:
             RedisAllocatorObject if allocation was successful, None otherwise
@@ -309,7 +312,8 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         atexit.register(lambda: self.finalize(self._allocator()))
 
     def malloc(self, allocator: 'RedisAllocator', timeout: Timeout = 120,
-               obj: Optional[Any] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject]:
+               obj: Optional[Any] = None, params: Optional[dict] = None,
+               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject]:
         """Allocate a resource according to the policy.
 
         This implementation:
@@ -322,6 +326,8 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
             timeout: How long the allocation should be valid (in seconds)
             obj: The object to associate with the allocation
             params: Additional parameters for the allocation
+            cache_timeout: Timeout for the soft binding cache entry (seconds).
+                       Defaults to 3600.
 
         Returns:
             RedisAllocatorObject if allocation was successful, None otherwise
@@ -333,13 +339,17 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         allocator.gc(self.gc_count)
 
         # Fall back to regular allocation
-        key = allocator.malloc_key(timeout, obj.name if obj else None)
-        obj = RedisAllocatorObject(allocator, key, obj, params)
-        old_obj = self.objects.get(obj.unique_id, None)
+        # Explicitly call obj.name if obj exists
+        obj_name = obj.name() if obj and hasattr(obj, 'name') and callable(
+            obj.name) else (obj.name if obj and hasattr(obj, 'name') else None)
+        key = allocator.malloc_key(timeout, obj_name,
+                                   cache_timeout=cache_timeout)
+        alloc_obj = RedisAllocatorObject(allocator, key, obj, params)
+        old_obj = self.objects.get(alloc_obj.unique_id, None)
         if old_obj is not None:
             old_obj.close()
-        self.objects[obj.unique_id] = obj
-        return obj
+        self.objects[alloc_obj.unique_id] = alloc_obj
+        return alloc_obj
 
     def _try_refresh_pool(self, allocator: 'RedisAllocator'):
         """Try to refresh the pool if necessary and if we can acquire the lock.
@@ -381,52 +391,53 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
 
 
 class RedisAllocator(RedisLockPool, Generic[U]):
-    """A Redis-based distributed memory allocation system.
+    """A Redis-based distributed allocation system.
 
-    This class implements a memory allocation interface using Redis as the backend store.
-    It manages a pool of resources that can be allocated, freed, and garbage collected.
-    The implementation uses a doubly-linked list structure stored in Redis hashes to
-    track available and allocated resources.
+    Manages a pool of resource identifiers (keys) using Redis, allowing distributed
+    clients to allocate, free, and manage these resources. It leverages Redis's
+    atomic operations via Lua scripts for safe concurrent access.
 
-    Allocation Modes:
-    - Shared mode (shared=True): Resources can be shared across multiple clients. When allocated,
-      items are removed from the free list head and placed back on the tail without locking.
-      This allows multiple clients to access the same resource concurrently.
-    - Non-shared mode (shared=False): Resources are locked when allocated, preventing other
-      clients from accessing them until they are freed or their lock times out.
+    The allocator maintains a doubly-linked list in a Redis hash to track available
+    (free) resources. Allocated resources are tracked using standard Redis keys
+    that act as locks.
 
-    Soft Binding:
-    Objects implementing RedisAllocatableClass with a non-None name property can use soft binding,
-    which creates a mapping between the object name and an allocated key. Subsequent allocation
-    requests with the same named object will try to reuse the previously allocated key,
-    providing consistent resource allocation for the same logical entity.
+    Key Concepts:
+    - Allocation Pool: A set of resource identifiers (keys) managed by the allocator.
+      Stored in a Redis hash (`<prefix>|<suffix>|pool`) representing a doubly-linked list.
+      Head/Tail pointers are stored in separate keys (`<prefix>|<suffix>|pool|head`,
+      `<prefix>|<suffix>|pool|tail`).
+    - Free List: The subset of keys within the pool that are currently available.
+      Represented by the linked list structure within the pool hash.
+    - Allocated State: A key is considered allocated if a corresponding lock key exists
+      (`<prefix>|<suffix>:<key>`).
+    - Shared Mode: If `shared=True`, allocating a key moves it to the tail of the
+      free list but does *not* create a lock key. This allows multiple clients to
+      "allocate" the same key concurrently, effectively using the list as a rotating pool.
+      If `shared=False` (default), allocation creates a lock key, granting exclusive access.
+    - Soft Binding: Allows associating a logical name with an allocated key. If an object
+      provides a `name`, the allocator tries to reuse the previously bound key for that name.
+      Stored in Redis keys like `<prefix>|<suffix>-cache:bind:<name>`.
+    - Garbage Collection (GC): Periodically scans the pool to reconcile the free list
+      with the lock states. Removes expired/locked items from the free list and returns
+      items whose locks have expired back to the free list.
+    - Policies: Uses `RedisAllocatorPolicy` (e.g., `DefaultRedisAllocatorPolicy`)
+      to customize allocation behavior, GC triggering, and pool updates.
 
-    Garbage Collection:
-    The allocator includes a garbage collection mechanism that:
-    1. Removes items from the free list that are locked (unhealthy)
-    2. Returns items to the free list if their locks have expired
-    3. Removes items with explicit expiry times that have elapsed
-
-    Allocation Policies:
-    The allocator supports customizable allocation policies through the RedisAllocatorPolicy
-    interface, allowing for custom allocation strategies, automatic pool updates, and
-    garbage collection scheduling.
-
-    Generic type U must implement the RedisContextableObject protocol, allowing
-    allocated objects to be used as context managers.
+    Generic type U should implement `RedisAllocatableClass`.
     """
 
     def __init__(self, redis: Redis, prefix: str, suffix='allocator', eps=1e-6,
                  shared=False, policy: Optional[RedisAllocatorPolicy] = None):
-        """Initialize a RedisAllocator instance.
+        """Initializes the RedisAllocator.
 
         Args:
-            redis: Redis client for communication with Redis server
-            prefix: Prefix for all Redis keys used by this allocator
-            suffix: Suffix for Redis keys to uniquely identify this allocator
-            eps: Small value for floating point comparisons
-            shared: Whether resources can be shared across multiple consumers
-            policy: Optional allocation policy to control allocation behavior
+            redis: StrictRedis client instance (must decode responses).
+            prefix: Prefix for all Redis keys used by this allocator instance.
+            suffix: Suffix to uniquely identify this allocator instance's keys.
+            eps: Small float tolerance for comparisons (used by underlying lock).
+            shared: If True, operates in shared mode (keys are rotated, not locked).
+                    If False (default), keys are locked upon allocation.
+            policy: Optional allocation policy. Defaults to `DefaultRedisAllocatorPolicy`.
         """
         super().__init__(redis, prefix, suffix=suffix, eps=eps)
         self.shared = shared
@@ -454,22 +465,26 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     @property
     def _lua_required_string(self):
-        """LUA script containing helper functions for Redis operations.
+        """Base Lua script providing common functions for pool manipulation.
 
-        This script defines various LUA functions for manipulating the doubly-linked list
-        structure that represents the allocation pool:
-        - key_str(key: str) -> str: Get Redis key for a given key
-        - pool_str() -> str: Get Redis key for the pool
-        - pool_pointer_str(head: bool) -> str: Get Redis keys for head/tail pointers
-        - cache_str() -> str: Get Redis key for the cache
-        - timeout_to_expiry(timeout: int) -> int: Convert a timeout to an expiry
-        - is_expiry_invalid(expiry: int) -> bool: Check if an expiry is invalid
-        - is_expired(value: str) -> bool: Check if a value is expired
-        - split_pool_value(value: str) -> tuple: Split a pool value into prev, next, and expiry
-        - join_pool_value(prev: str, next: str, expiry: int) -> str: Join a pool value into a string
-        - push_to_tail(itemName: str, expiry: int) -> None: Add an item to the tail of the linked list
-        - pop_from_head() -> [str, int]: Remove and return the item at the head of the linked list
-        - set_item_allocated(itemName: str) -> None: Set an item as allocated
+        Includes functions inherited from RedisLockPool and adds allocator-specific ones:
+        - pool_pointer_str(head: bool): Returns the Redis key for the head/tail pointer.
+        - cache_str(): Returns the Redis key for the allocator's general cache.
+        - soft_bind_name(name: str): Returns the Redis key for a specific soft binding.
+        - split_pool_value(value: str): Parses the 'prev||next||expiry' string stored
+                                        in the pool hash for a key.
+        - join_pool_value(prev: str, next: str, expiry: int): Creates the value string.
+        - timeout_to_expiry(timeout: int): Converts relative seconds to absolute Unix timestamp.
+        - is_expiry_invalid(expiry: int): Checks if an absolute expiry time is in the past.
+        - is_expired(value: str): Checks if a pool item's expiry is in the past.
+        - push_to_tail(itemName: str, expiry: int): Adds/updates an item at the tail of the free list.
+        - pop_from_head(): Removes and returns the item from the head of the free list,
+                           skipping expired or locked items. Returns (nil, -1) if empty.
+        - set_item_allocated(itemName: str): Removes an item from the free list structure.
+        - check_item_health(itemName: str, value: str|nil): Core GC logic for a single item.
+            - If item is marked #ALLOCATED but has no lock -> push to tail (return to free list).
+            - If item is in free list but expired -> remove from pool hash.
+            - If item is in free list but locked -> mark as #ALLOCATED (remove from free list).
         """
         return f'''
         {super()._lua_required_string}
@@ -622,7 +637,13 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     @cached_property
     def _extend_script(self):
-        """Cached Redis script for extending the allocation pool."""
+        """Cached Lua script to add or update keys in the pool.
+
+        Iterates through provided keys (ARGV[2...]).
+        If a key doesn't exist in the pool hash, it's added to the tail of the free list
+        using push_to_tail() with the specified expiry (calculated from ARGV[1] timeout).
+        If a key *does* exist, its expiry time is updated in the pool hash.
+        """
         return self.redis.register_script(f'''{self._lua_required_string}\n
         local timeout = tonumber(ARGV[1] or -1)
         local expiry = timeout_to_expiry(timeout)
@@ -651,7 +672,13 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     @cached_property
     def _shrink_script(self):
-        """Cached Redis script for shrinking the allocation pool."""
+        """Cached Lua script to remove keys from the pool.
+
+        Iterates through provided keys (ARGV[1...]).
+        For each key:
+        1. Calls set_item_allocated() to remove it from the free list structure.
+        2. Deletes the key entirely from the pool hash using HDEL.
+        """
         return self.redis.register_script(f'''{self._lua_required_string}
         for i=1, #ARGV do
             local itemName = ARGV[i]
@@ -670,7 +697,19 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     @cached_property
     def _assign_script(self):
-        """Cached Redis script for assigning resources to the allocation pool."""
+        """Cached Lua script to set the pool to exactly the given keys.
+
+        1. Builds a Lua set (`assignSet`) of the desired keys (ARGV[2...]).
+        2. Fetches all current keys from the pool hash (HKEYS).
+        3. Iterates through current keys:
+           - If a key is *not* in `assignSet`, it's removed from the pool
+             (set_item_allocated() then HDEL).
+           - If a key *is* in `assignSet`, it's marked as processed by setting
+             `assignSet[key] = nil`.
+        4. Iterates through the remaining keys in `assignSet` (those not already
+           in the pool). These are added to the tail of the free list using
+           push_to_tail() with the specified expiry (from ARGV[1] timeout).
+        """
         return self.redis.register_script(f'''{self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
         local expiry = timeout_to_expiry(timeout)
@@ -778,52 +817,84 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     @cached_property
     def _malloc_script(self):
-        """Cached Redis script for allocating a resource."""
+        """Cached Lua script to allocate a key from the pool.
+
+        Input ARGS: timeout, name (for soft binding), soft_bind_timeout
+
+        1. Soft Binding Check (if name provided):
+           - Tries to GET the bound key from the soft bind cache key.
+           - If found and the key is *not* currently locked (checked via EXISTS key_str(cachedKey)),
+             it refreshes the soft bind expiry and returns the cached key.
+           - If found but the key *is* locked, it deletes the stale soft bind entry.
+        2. Pop from Head: Calls `pop_from_head()` to get the next available key
+           from the free list head. This function internally skips expired/locked items.
+        3. Lock/Update (if key found):
+           - If `shared=False`: Sets the lock key (`key_str(itemName)`) with the specified timeout.
+           - If `shared=True`: Calls `push_to_tail()` to put the item back onto the free list immediately.
+        4. Update Soft Bind Cache (if key found and name provided):
+           - Sets the soft bind cache key to the allocated `itemName` with its timeout.
+        5. Returns the allocated `itemName` or nil if the pool was empty.
+        """
         return self.redis.register_script(f'''
         {self._lua_required_string}
         local shared = {1 if self.shared else 0}
         local timeout = tonumber(ARGV[1])
-        local cacheName = soft_bind_name(ARGV[2])
-        local cacheTimeout = tonumber(ARGV[3])
+        local name_arg = ARGV[2] -- Original name argument
+        local cacheName = soft_bind_name(name_arg) -- Key for soft binding cache
+        local cacheTimeout = tonumber(ARGV[3]) -- Timeout for the soft binding cache entry
+
         local function refresh_cache(cacheKey)
-            if cacheName then
-                if cacheTimeout ~= nil and cacheTimeout > 0 then
-                    redis.call("SET", cacheName, cacheKey, "EX", cacheTimeout)
-                else
-                    redis.call("SET", cacheName, cacheKey)
-                end
+            -- Only refresh if a valid name and timeout were provided
+            if name_arg ~= "" and cacheTimeout ~= nil and cacheTimeout > 0 then
+                redis.call("SET", cacheName, cacheKey, "EX", cacheTimeout)
+            elseif name_arg ~= "" then -- If timeout is invalid/zero, set without expiry
+                 redis.call("SET", cacheName, cacheKey)
             end
         end
-        if name == "" then
+
+        -- Check soft binding only if a name was provided
+        if name_arg ~= "" then
             local cachedKey = redis.call("GET", cacheName)
             if cachedKey then
-                if redis.call("EXISTS", key_str(cachedKey)) then
+                -- Check if the cached key exists and is currently locked (in non-shared mode)
+                -- In shared mode, EXISTS will always be false, so we skip this check
+                if not shared and redis.call("EXISTS", key_str(cachedKey)) then
+                    -- Cached key is locked, binding is stale, remove it
                     redis.call("DEL", cacheName)
                 else
-                    refresh_cache(cachedKey)
-                    return cachedKey
+                    -- Cached key is valid (either not locked or in shared mode)
+                    refresh_cache(cachedKey) -- Refresh the cache expiry
+                    return cachedKey -- Return the bound key
                 end
             end
         end
+
+        -- No valid soft bind found, proceed with normal allocation
         local itemName, expiry = pop_from_head()
         if itemName ~= nil then
             if not shared then
+                -- Non-shared mode: Acquire lock
                 if timeout ~= nil and timeout > 0 then
                     redis.call("SET", key_str(itemName), "1", "EX", timeout)
                 else
-                    redis.call("SET", key_str(itemName), "1")
+                    redis.call("SET", key_str(itemName), "1") -- Set without expiry if timeout <= 0
                 end
             else
+                -- Shared mode: Just put it back to the tail
                 push_to_tail(itemName, expiry)
             end
         end
-        if itemName then
+
+        -- If allocation was successful and a name was provided, update the soft bind cache
+        if itemName and name_arg ~= "" then
             refresh_cache(itemName)
         end
+
         return itemName
         ''')
 
-    def malloc_key(self, timeout: Timeout = 120, name: Optional[str] = None) -> Optional[str]:
+    def malloc_key(self, timeout: Timeout = 120, name: Optional[str] = None,
+                   cache_timeout: Timeout = 3600) -> Optional[str]:
         """Allocate a resource key from the pool.
 
         The behavior depends on the allocator's shared mode:
@@ -831,47 +902,80 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         - In shared mode: Simply removes the key from the free list without locking it
 
         Args:
-            timeout: How long the allocation should be valid (in seconds)
-            obj: Optional object to use for additional context
+            timeout: How long the allocation lock should be valid (in seconds).
+            name: Optional name to use for soft binding.
+            cache_timeout: Timeout for the soft binding cache entry (seconds).
+                           Defaults to 3600. If <= 0, cache entry persists indefinitely.
 
         Returns:
             Resource identifier if allocation was successful, None otherwise
         """
         if name is None:
             name = ""
-        return self._malloc_script(args=[self._to_seconds(timeout), name])
+        # Convert timeout values to integers for Lua
+        lock_timeout_sec = int(self._to_seconds(timeout))
+        cache_timeout_sec = int(self._to_seconds(cache_timeout))
+        # Convert integers to strings for Lua script arguments
+        return self._malloc_script(args=[
+            str(lock_timeout_sec),
+            name,
+            str(cache_timeout_sec)
+        ])
 
-    def malloc(self, timeout: Timeout = 120, obj: Optional[U] = None, params: Optional[dict] = None) -> Optional[RedisAllocatorObject[U]]:
+    def malloc(self, timeout: Timeout = 120, obj: Optional[U] = None, params: Optional[dict] = None,
+               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject[U]]:
         """Allocate a resource from the pool and wrap it in a RedisAllocatorObject.
 
         If a policy is configured, it will be used to control the allocation behavior.
         Otherwise, the basic allocation mechanism will be used.
 
         Args:
-            timeout: How long the allocation should be valid (in seconds)
-            obj: The object to wrap in the RedisAllocatorObject
-            params: Additional parameters to associate with the allocated object
+            timeout: How long the allocation lock should be valid (in seconds)
+            obj: The object to wrap in the RedisAllocatorObject. If it has a `.name`,
+                 soft binding will be attempted.
+            params: Additional parameters to associate with the allocated object.
+            cache_timeout: Timeout for the soft binding cache entry (seconds).
+                           Defaults to 3600. Passed to the policy or `malloc_key`.
 
         Returns:
             RedisAllocatorObject wrapping the allocated resource if successful, None otherwise
         """
         if self.policy:
-            return self.policy.malloc(self, timeout, obj, params)
-        name = obj.name if obj else None
-        key = self.malloc_key(timeout, name)
-        return RedisAllocatorObject(self, key, obj, params)
+            # Pass cache_timeout to the policy's malloc method
+            return self.policy.malloc(
+                self, timeout, obj, params,
+                cache_timeout=cache_timeout
+            )
+        # No policy, call malloc_key directly
+        # Explicitly call obj.name if obj exists
+        name = obj.name() if obj and hasattr(obj, 'name') and callable(
+            obj.name) else (obj.name if obj and hasattr(obj, 'name') else None)
+        key = self.malloc_key(timeout, name, cache_timeout=cache_timeout)
+        return RedisAllocatorObject(
+            self, key, obj, params
+        )
 
     @cached_property
     def _free_script(self):
-        """Cached Redis script for freeing allocated resources."""
+        """Cached Lua script to free allocated keys.
+
+        Iterates through provided keys (ARGV[2...]).
+        For each key:
+        1. Deletes the corresponding lock key (`key_str(k)`) using DEL.
+           If the key existed (DEL returns 1), it proceeds.
+        2. Adds the key back to the tail of the free list using `push_to_tail()`
+           with the specified expiry (calculated from ARGV[1] timeout).
+        """
         return self.redis.register_script(f'''
         {self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
         local expiry = timeout_to_expiry(timeout)
         for i=2, #ARGV do
             local k = ARGV[i]
-            redis.call('DEL', key_str(k))
-            push_to_tail(k, expiry)
+            local deleted = redis.call('DEL', key_str(k))
+            if deleted > 0 then -- Only push back to pool if it was actually locked/deleted
+                push_to_tail(k, expiry)
+            end
         end
         ''')
 
@@ -904,7 +1008,19 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
     @cached_property
     def _gc_script(self):
-        """Cached Redis script for garbage collection."""
+        """Cached Lua script for performing garbage collection.
+
+        Uses HSCAN to iterate through the pool hash incrementally.
+        Input ARGS: count (max items to scan per call)
+
+        1. Gets the scan cursor from a dedicated key (`_gc_cursor_str()`).
+        2. Calls HSCAN on the pool hash (`pool_str()`) starting from the cursor,
+           requesting up to `count` items.
+        3. Iterates through the key-value pairs returned by HSCAN.
+        4. For each item, calls `check_item_health()` to reconcile its state
+           (see `_lua_required_string` documentation).
+        5. Saves the new cursor returned by HSCAN for the next GC call.
+        """
         return self.redis.register_script(f'''
         {self._lua_required_string}
         local cursorKey = '{self._gc_cursor_str()}'

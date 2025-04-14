@@ -39,22 +39,24 @@ class TaskExecutePolicy(Enum):
 
 @dataclass
 class RedisTask:
-    """Represents a task in the Redis task queue system.
+    """Represents a task to be processed via the RedisTaskQueue.
 
-    This class encapsulates all information related to a task, including
-    its unique ID, name, parameters, and execution status.
+    Encapsulates task details like ID, category (name), parameters, and its current state
+    (progress, result, error). It includes methods for saving state and updating progress.
 
     Attributes:
-        id: Unique identifier for the task
-        name: Name of the task category
-        params: Dictionary of parameters for the task
-        expiry: Unix timestamp when this task expires
-        result: The result of the task, initially None
-        error: Any error that occurred during task execution
-        update_progress_time: Last time the progress was updated
-        current_progress: Current progress value
-        total_progress: Total progress value for completion
-        _save: Internal callable to save task state to Redis
+        id: Unique identifier for this specific task instance.
+        name: Categorical name for the task (used for routing in the queue).
+        params: Dictionary containing task-specific input parameters.
+        expiry: Absolute Unix timestamp when the task should be considered expired.
+               Used both locally and remotely to timeout waiting operations.
+        result: Stores the successful return value of the task execution.
+        error: Stores any exception raised during task execution.
+        update_progress_time: Timestamp of the last progress update.
+        current_progress: Current progress value (e.g., items processed).
+        total_progress: Total expected value for completion (e.g., total items).
+        _save: Internal callback function provided by RedisTaskQueue to persist
+               the task's state (result, error, progress) back to Redis.
     """
     id: str
     name: str
@@ -91,11 +93,33 @@ class RedisTask:
 
 
 class RedisTaskQueue:
-    """A class that provides a simple interface for managing a task queue in Redis.
+    """Provides a distributed task queue using Redis lists and key/value storage.
 
-    This class enables distributed task processing through Redis, with support for
-    asynchronous processing, task listening, and result retrieval. Tasks can be
-    executed locally or remotely based on configurable policies.
+    Enables submitting tasks (represented by `RedisTask` objects) to named queues
+    and having them processed either locally (if `task_fn` is provided) or by
+    remote listeners polling the corresponding Redis list.
+
+    Key Concepts:
+    - Task Queues: Redis lists (`<prefix>|<suffix>|task-queue|<name>`) where task IDs
+                   are pushed for remote workers.
+    - Task Data: Serialized `RedisTask` objects stored in Redis keys
+                 (`<prefix>|<suffix>|task-result:<id>`) with an expiry time.
+                 This stores parameters, progress, results, and errors.
+    - Listeners: Remote workers use BLPOP on queue lists. To signal their presence,
+                 they periodically set a listener key (`<prefix>|<suffix>|task-listen|<name>`).
+    - Execution Policies (`TaskExecutePolicy`): Control whether a task is executed
+                                            locally, remotely, or attempts one then the other.
+                                            `Auto` mode checks for a listener key.
+    - Task Function (`task_fn`): A user-provided function that takes a `RedisTask`
+                                 and performs the actual work locally.
+
+    Attributes:
+        redis: StrictRedis client instance.
+        prefix: Prefix for all Redis keys.
+        suffix: Suffix for Redis keys (default: 'task-queue').
+        timeout: Default expiry/timeout for tasks and listener keys (seconds).
+        interval: Polling interval for remote task fetching (seconds).
+        task_fn: Callable[[RedisTask], Any] to execute tasks locally.
     """
 
     def __init__(self, redis: Redis, prefix: str, suffix='task-queue', timeout=300, interval=5,

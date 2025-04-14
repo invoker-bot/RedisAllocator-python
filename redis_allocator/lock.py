@@ -288,13 +288,14 @@ class BaseLockPool(BaseLock, metaclass=ABCMeta):
 class RedisLock(BaseLock):
     """Redis-based lock implementation.
 
-    Provides distributed locking capabilities using Redis as the backend storage.
+    Uses standard Redis commands (SET with NX, EX options) for basic locking
+    and Lua scripts for conditional operations (set/del based on value comparison).
 
     Attributes:
-        redis: The Redis client instance.
-        prefix: Prefix for Redis keys.
-        suffix: Suffix for Redis keys.
-        eps: Epsilon value for floating point comparison.
+        redis: StrictRedis client instance (must decode responses).
+        prefix: Prefix for all Redis keys managed by this lock instance.
+        suffix: Suffix for Redis keys to distinguish lock types (e.g., 'lock').
+        eps: Epsilon for float comparisons in conditional Lua scripts.
     """
 
     redis: Redis
@@ -319,9 +320,9 @@ class RedisLock(BaseLock):
 
     @property
     def _lua_required_string(self):
-        """LUA script containing helper functions for Redis operations.
+        """Base Lua script providing the key_str function.
 
-        - key_str(key: str) -> str: Get Redis key for a given key
+        - key_str(key: str): Constructs the full Redis key using prefix and suffix.
         """
         return f'''
         local function key_str(key)
@@ -365,6 +366,11 @@ class RedisLock(BaseLock):
 
     def _conditional_setdel(self, op: str, key: str, value: float, set_value: Optional[float] = None, ex: Optional[int] = None,
                             isdel: bool = False) -> bool:
+        """Executes the conditional set/delete Lua script.
+
+        Passes necessary arguments (key, compare_value, set_value, expiry, isdel flag)
+        to the cached Lua script corresponding to the comparison operator (`op`).
+        """
         # Convert None to a valid value for Redis (using -1 to indicate no expiration)
         key_value = self._key_str(key)
         ex_value = -1 if ex is None else ex
@@ -380,6 +386,21 @@ class RedisLock(BaseLock):
                 ('>', '<', '>=', '<=', '==', '!=')}
 
     def _conditional_setdel_lua_script(self, op: str, eps: float = 1e-6) -> str:
+        """Generates the Lua script for conditional set/delete operations.
+
+        Args:
+            op: The comparison operator ('>', '<', '>=', '<=', '==', '!=').
+            eps: Epsilon for floating-point comparisons ('==', '!=', '>=', '<=').
+
+        Returns:
+            A Lua script string that:
+            1. Gets the current numeric value of the target key (KEYS[1]).
+            2. Compares it with the provided compare_value (ARGV[1]) using the specified `op`.
+            3. If the key doesn't exist or the condition is true:
+               - If `isdel` (ARGV[4]) is true, deletes the key.
+               - Otherwise, sets the key to `new_value` (ARGV[2]) with optional expiry `ex` (ARGV[3]).
+            4. Returns true if the operation was performed, false otherwise.
+        """
         match op:
             case '>':
                 condition = 'compare_value > current_value'
@@ -429,9 +450,14 @@ class RedisLock(BaseLock):
 
 
 class RedisLockPool(RedisLock, BaseLockPool):
-    """Redis-based lock pool implementation.
+    """Manages a collection of RedisLock keys as a logical pool.
 
-    Manages a pool of Redis locks, stored as a Redis set.
+    Uses a Redis Set (`<prefix>|<suffix>|pool`) to store the identifiers (keys)
+    belonging to the pool. Inherits locking logic from RedisLock.
+
+    Provides methods to add (`extend`), remove (`shrink`), replace (`assign`),
+    and query (`keys`, `__contains__`) the members of the pool.
+    Also offers methods to check the lock status of pool members (`_get_key_lock_status`).
     """
 
     def __init__(self, redis: Redis, prefix: str, suffix='lock-pool', eps: float = 1e-6):
@@ -448,10 +474,10 @@ class RedisLockPool(RedisLock, BaseLockPool):
 
     @property
     def _lua_required_string(self):
-        """LUA script containing helper functions for Redis operations.
+        """Base Lua script providing key_str and pool_str functions.
 
-        - key_str(key: str) -> str: Get Redis key for a given key
-        - pool_str() -> str: Get Redis key for the pool
+        - key_str(key: str): Inherited from RedisLock.
+        - pool_str(): Returns the Redis key for the pool Set.
         """
         return f'''
         {super()._lua_required_string}
@@ -476,6 +502,11 @@ class RedisLockPool(RedisLock, BaseLockPool):
 
     @property
     def _assign_lua_string(self):
+        """Lua script to atomically replace the contents of the pool Set.
+
+        1. Deletes the existing pool Set key (KEYS[1]).
+        2. Adds all provided keys (ARGV) to the (now empty) pool Set using SADD.
+        """
         return f'''
         {self._lua_required_string}
         local _pool_str = KEYS[1]
@@ -524,13 +555,16 @@ class LockData:
 
 
 class ThreadLock(BaseLock):
-    """Thread-safe lock implementation for local process use.
+    """In-memory, thread-safe lock implementation conforming to BaseLock.
 
-    Provides similar functionality to RedisLock but works locally
-    within a single Python process using threading mechanisms.
+    Simulates Redis lock behavior using Python's `threading.RLock` for concurrency
+    control and a `defaultdict` to store lock data (value and expiry timestamp).
+    Suitable for single-process scenarios or testing.
 
     Attributes:
-        eps: Epsilon value for floating point comparison.
+        eps: Epsilon for float comparisons.
+        _locks: defaultdict storing LockData(value, expiry) for each key.
+        _lock: threading.RLock protecting access to _locks.
     """
 
     def __init__(self, eps: float = 1e-6):
@@ -646,9 +680,14 @@ class ThreadLock(BaseLock):
 
 
 class ThreadLockPool(ThreadLock, BaseLockPool):
-    """Thread-safe lock pool implementation for local process use.
+    """In-memory, thread-safe lock pool implementation.
 
-    Maintains a set of keys as the pool and provides operations to manage them.
+    Manages a collection of lock keys using a Python `set` for the pool members
+    and inherits the locking logic from `ThreadLock`.
+
+    Attributes:
+        _pool: Set containing the keys belonging to this pool.
+        _lock: threading.RLock protecting access to _locks and _pool.
     """
 
     def __init__(self, eps: float = 1e-6):
