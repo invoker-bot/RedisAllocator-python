@@ -42,52 +42,37 @@ RedisLock 提供以下重要特性的分布式锁定：
 - **线程识别**：每个锁可以包含线程标识符来确定所有权
 - **重入锁定**：同一线程/进程可以使用 rlock 方法重新获取其拥有的锁
 
-```python
-from redis import Redis
-from redis_allocator import RedisLock
-import threading
-import time
-
-# 初始化 Redis 客户端（需要单个 Redis 实例）
-redis = Redis(host='localhost', port=6379, decode_responses=True)
-
-# 创建 RedisLock 实例
-lock = RedisLock(redis, "myapp", "resource-lock")
-
-# 使用当前线程 ID 作为锁标识符
-thread_id = str(threading.get_ident())
-
-# 获取一个 60 秒超时的锁
-if lock.lock("resource-123", value=thread_id, timeout=60):
-    try:
-        # 使用被锁定的资源执行操作
-        print("资源锁定成功")
-        
-        # 对于长时间运行的操作，定期更新锁
-        # 以防止超时过期
-        for _ in range(5):
-            time.sleep(10)  # 执行一些工作
-            
-            # 通过更新锁延长其生命周期
-            lock.update("resource-123", value=thread_id, timeout=60)
-            print("锁已更新，超时已延长")
-            
-        # 使用 rlock 进行重入锁定的示例（因为是同一 thread_id 所以成功）
-        if lock.rlock("resource-123", value=thread_id):
-            print("成功重新锁定资源")
-    finally:
-        # 完成后释放锁
-        lock.unlock("resource-123")
-        print("资源已解锁")
-else:
-    print("无法获取锁 - 资源正在使用中")
-```
-
 **关键概念：**
 - 如果锁持有者在超时期内未能更新，锁会自动释放
 - 使用 `rlock()` 允许同一线程重新获取其已持有的锁
 - 此实现仅适用于单个 Redis 实例（不适用于 Redis 集群）
 - 在分布式系统中，每个节点应使用唯一标识符作为锁值
+
+**简化的锁流程：**
+
+```mermaid
+sequenceDiagram
+    participant 客户端
+    participant RedisLock
+    participant Redis
+
+    客户端->>RedisLock: lock("资源键", "持有者ID", timeout=60)
+    RedisLock->>Redis: SET 资源键 持有者ID NX EX 60
+    alt 获取锁成功
+        Redis-->>RedisLock: OK
+        RedisLock-->>客户端: True
+        客户端->>RedisLock: update("资源键", "持有者ID", timeout=60)
+        RedisLock->>Redis: SET 资源键 持有者ID EX 60
+        Redis-->>RedisLock: OK
+        客户端->>RedisLock: unlock("资源键")
+        RedisLock->>Redis: DEL 资源键
+        Redis-->>RedisLock: 1 (已删除)
+        RedisLock-->>客户端: True
+    else 获取锁失败 (已被锁定)
+        Redis-->>RedisLock: nil
+        RedisLock-->>客户端: False
+    end
+```
 
 ### 使用 RedisAllocator 进行资源管理
 
@@ -183,6 +168,64 @@ if key:
 
 软绑定创建命名对象与分配资源之间的持久关联：
 
+**分配器池结构（概念图）：**
+
+```mermaid
+graph TD
+    subgraph Redis 键
+        HKey["<前缀>|<后缀>|pool|head"] --> Key1["键1: &quot;&quot;||键2||过期时间"]
+        TKey["<前缀>|<后缀>|pool|tail"] --> KeyN["键N: 键N-1||&quot;&quot;||过期时间"]
+        PoolHash["<前缀>|<后缀>|pool (哈希)"]
+    end
+
+    subgraph "PoolHash 内容 (双向空闲链表)"
+        Key1 --> Key2["键2: 键1||键3||过期时间"]
+        Key2 --> Key3["键3: 键2||...||过期时间"]
+        Key3 --> ...
+        KeyN_1[...] --> KeyN
+    end
+
+    subgraph "已分配的键 (非共享模式)"
+        LKey1["<前缀>|<后缀>:已分配键1"]
+        LKeyX["<前缀>|<后缀>:已分配键X"]
+    end
+
+    subgraph "软绑定缓存"
+        CacheKey1["<前缀>|<后缀>-cache:bind:名称1"] --> 已分配键1
+    end
+```
+
+**简化分配流程 (非共享模式):**
+
+```mermaid
+flowchart TD
+    开始 --> 检查软绑定{提供软绑定名称?}
+    检查软绑定 -- 是 --> 获取绑定{GET 绑定缓存键}
+    获取绑定 --> 绑定键是否有效["缓存键找到且未锁定?"]
+    绑定键是否有效 -- 是 --> 返回缓存键[返回缓存键]
+    绑定键是否有效 -- 否 --> 弹出头部{从空闲列表头部弹出}
+    检查软绑定 -- 否 --> 弹出头部
+    弹出头部 --> 是否找到键{找到键?}
+    是否找到键 -- 是 --> 锁定键["SET 锁键 (带超时)"]
+    锁定键 --> 更新缓存["更新绑定缓存 (若提供名称)"]
+    更新缓存 --> 返回新键[返回新键]
+    是否找到键 -- 否 --> 返回None[返回 None]
+    返回缓存键 --> 结束
+    返回新键 --> 结束
+    返回None --> 结束
+```
+
+**简化释放流程 (非共享模式):**
+
+```mermaid
+flowchart TD
+    开始 --> 删除锁{DEL 锁键}
+    删除锁 --> 是否删除{"键存在? (DEL > 0)"}
+    是否删除 -- 是 --> 推入尾部[将键推到空闲列表尾部]
+    推入尾部 --> 结束
+    是否删除 -- 否 --> 结束
+```
+
 ```python
 from redis import Redis
 from redis_allocator import RedisAllocator, RedisAllocatableClass
@@ -237,6 +280,42 @@ print(f"第二次分配: {allocation2.key}")  # 将再次是 "resource-1"
 - 软绑定有自己的超时时间（默认 3600 秒），与资源锁分开
 
 ### 使用 RedisTaskQueue 进行分布式任务处理
+
+**简化的任务队列流程：**
+
+```mermaid
+sequenceDiagram
+    participant 客户端
+    participant 任务队列
+    participant Redis
+    participant 监听器
+
+    客户端->>任务队列: query(任务ID, 名称, 参数)
+    任务队列->>Redis: SETEX result:<任务ID> 序列化任务
+    任务队列->>Redis: RPUSH queue:<名称> <任务ID>
+    Redis-->>任务队列: OK
+    任务队列-->>客户端: (等待或返回，取决于本地执行)
+
+    监听器->>任务队列: listen([名称])
+    loop 轮询队列
+        任务队列->>Redis: BLPOP queue:<名称> timeout
+        alt 任务可用
+            Redis-->>任务队列: [queue:<名称>, <任务ID>]
+            任务队列->>Redis: GET result:<任务ID>
+            Redis-->>任务队列: 序列化任务
+            任务队列->>监听器: 执行 task_fn(任务)
+            监听器-->>任务队列: 结果/错误
+            任务队列->>Redis: SETEX result:<任务ID> 更新后的序列化任务
+        else 超时
+            Redis-->>任务队列: nil
+        end
+    end
+
+    客户端->>任务队列: get_task(任务ID) (定期或收到通知后)
+    任务队列->>Redis: GET result:<任务ID>
+    Redis-->>任务队列: 更新后的序列化任务
+    任务队列-->>客户端: 任务结果/错误
+```
 
 ```python
 from redis import Redis

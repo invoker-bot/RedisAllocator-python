@@ -89,6 +89,32 @@ else:
 - This implementation only works with a single Redis instance (not Redis Cluster)
 - In a distributed system, each node should use a unique identifier as the lock value
 
+**Simplified Lock Flow:**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant RedisLock
+    participant Redis
+
+    Client->>RedisLock: lock("key", "id", timeout=60)
+    RedisLock->>Redis: SET key id NX EX 60
+    alt Lock Acquired
+        Redis-->>RedisLock: OK
+        RedisLock-->>Client: True
+        Client->>RedisLock: update("key", "id", timeout=60)
+        RedisLock->>Redis: SET key id EX 60
+        Redis-->>RedisLock: OK
+        Client->>RedisLock: unlock("key")
+        RedisLock->>Redis: DEL key
+        Redis-->>RedisLock: 1 (deleted)
+        RedisLock-->>Client: True
+    else Lock Not Acquired (Already Locked)
+        Redis-->>RedisLock: nil
+        RedisLock-->>Client: False
+    end
+```
+
 ### Using RedisAllocator for Resource Management
 
 ```python
@@ -183,6 +209,64 @@ if key:
 
 Soft binding creates persistent associations between named objects and allocated resources:
 
+**Allocator Pool Structure (Conceptual):**
+
+```mermaid
+graph TD
+    subgraph Redis Keys
+        HKey["<prefix>|<suffix>|pool|head"] --> Key1["Key1: &quot;&quot;||Key2||Expiry"]
+        TKey["<prefix>|<suffix>|pool|tail"] --> KeyN["KeyN: KeyN-1||&quot;&quot;||Expiry"]
+        PoolHash["<prefix>|<suffix>|pool (Hash)"]
+    end
+
+    subgraph "PoolHash Contents (Doubly-Linked Free List)"
+        Key1 --> Key2["Key2: Key1||Key3||Expiry"]
+        Key2 --> Key3["Key3: Key2||...||Expiry"]
+        Key3 --> ...
+        KeyN_1[...] --> KeyN
+    end
+
+    subgraph "Allocated Keys (Non-Shared Mode)"
+        LKey1["<prefix>|<suffix>:AllocatedKey1"]
+        LKeyX["<prefix>|<suffix>:AllocatedKeyX"]
+    end
+
+    subgraph "Soft Bind Cache"
+        CacheKey1["<prefix>|<suffix>-cache:bind:name1"] --> AllocatedKey1
+    end
+```
+
+**Simplified Allocation Flow (Non-Shared Mode):**
+
+```mermaid
+flowchart TD
+    Start --> CheckSoftBind{Soft Bind Name Provided?}
+    CheckSoftBind -- Yes --> GetBind{GET bind cache key}
+    GetBind --> IsBoundKeyValid{"Cached Key Found and Unlocked?"}
+    IsBoundKeyValid -- Yes --> ReturnCached[Return Cached Key]
+    IsBoundKeyValid -- No --> PopHead{Pop Head from Free List}
+    CheckSoftBind -- No --> PopHead
+    PopHead --> IsKeyFound{Key Found?}
+    IsKeyFound -- Yes --> LockKey[SET Lock Key w/ Timeout]
+    LockKey --> UpdateCache{"Update Bind Cache (if name provided)"}
+    UpdateCache --> ReturnNewKey[Return New Key]
+    IsKeyFound -- No --> ReturnNone[Return None]
+    ReturnCached --> End
+    ReturnNewKey --> End
+    ReturnNone --> End
+```
+
+**Simplified Free Flow (Non-Shared Mode):**
+
+```mermaid
+flowchart TD
+    Start --> DeleteLock{DEL Lock Key}
+    DeleteLock --> Deleted{"Key Existed? (DEL > 0)"}
+    Deleted -- Yes --> PushTail[Push Key to Free List Tail]
+    PushTail --> End
+    Deleted -- No --> End
+```
+
 ```python
 from redis import Redis
 from redis_allocator import RedisAllocator, RedisAllocatableClass
@@ -237,6 +321,42 @@ Key features of soft binding:
 - Soft bindings have their own timeout (default 3600 seconds) separate from resource locks
 
 ### Using RedisTaskQueue for Distributed Task Processing
+
+**Simplified Task Queue Flow:**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant TaskQueue
+    participant Redis
+    participant Listener
+
+    Client->>TaskQueue: query(id, name, params)
+    TaskQueue->>Redis: SETEX result:<id> pickled_task
+    TaskQueue->>Redis: RPUSH queue:<name> <id>
+    Redis-->>TaskQueue: OK
+    TaskQueue-->>Client: (Waits or returns if local)
+
+    Listener->>TaskQueue: listen([name])
+    loop Poll Queue
+        TaskQueue->>Redis: BLPOP queue:<name> timeout
+        alt Task Available
+            Redis-->>TaskQueue: [queue:<name>, <id>]
+            TaskQueue->>Redis: GET result:<id>
+            Redis-->>TaskQueue: pickled_task
+            TaskQueue->>Listener: Execute task_fn(task)
+            Listener-->>TaskQueue: result/error
+            TaskQueue->>Redis: SETEX result:<id> updated_pickled_task
+        else Timeout
+            Redis-->>TaskQueue: nil
+        end
+    end
+
+    Client->>TaskQueue: get_task(id) (Periodically or when notified)
+    TaskQueue->>Redis: GET result:<id>
+    Redis-->>TaskQueue: updated_pickled_task
+    TaskQueue-->>Client: Task result/error
+```
 
 ```python
 from redis import Redis

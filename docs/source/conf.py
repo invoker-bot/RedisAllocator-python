@@ -25,6 +25,7 @@ extensions = [
     'sphinx.ext.autosectionlabel',
     'sphinx_rtd_theme',
     'sphinx_git',  # For automatic changelog generation from git commits
+    'sphinxcontrib.mermaid',  # Added for Mermaid diagrams
 ]
 
 # Napoleon settings

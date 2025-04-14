@@ -121,4 +121,36 @@ Usage Patterns
             pass
         finally:
             # Release the lock
-            pool.unlock("resource-1") 
+            pool.unlock("resource-1")
+
+Simplified Lock Flow
+----------------------
+
+This diagram illustrates the typical sequence for acquiring, updating, and releasing a lock using `RedisLock`.
+
+.. mermaid::
+
+   sequenceDiagram
+       participant Client
+       participant RedisLock
+       participant Redis
+
+       Client->>RedisLock: lock("key", "id", timeout=60)
+       note right of Redis: Attempts SET key id NX EX 60
+       RedisLock->>Redis: SET key id NX EX 60
+       alt Lock Acquired
+           Redis-->>RedisLock: OK
+           RedisLock-->>Client: True
+           Client->>RedisLock: update("key", "id", timeout=60)
+           note right of Redis: Refreshes expiry: SET key id EX 60
+           RedisLock->>Redis: SET key id EX 60
+           Redis-->>RedisLock: OK
+           Client->>RedisLock: unlock("key")
+           note right of Redis: Removes lock: DEL key
+           RedisLock->>Redis: DEL key
+           Redis-->>RedisLock: 1 (deleted)
+           RedisLock-->>Client: True
+       else Lock Not Acquired (Already Locked)
+           Redis-->>RedisLock: nil
+           RedisLock-->>Client: False
+       end 
