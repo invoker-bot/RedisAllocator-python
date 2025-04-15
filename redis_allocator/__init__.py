@@ -8,7 +8,7 @@ distributed environment.
 from redis_allocator.lock import (RedisLock, RedisLockPool, LockStatus,
                                   BaseLock, BaseLockPool, ThreadLock, ThreadLockPool)
 from redis_allocator.task_queue import TaskExecutePolicy, RedisTask, RedisTaskQueue
-from redis_allocator.allocator import RedisAllocator
+from redis_allocator.allocator import RedisAllocator, RedisAllocatorObject, RedisAllocatorUpdater, RedisAllocatorPolicy, DefaultRedisAllocatorPolicy
 
 
 __version__ = '0.0.1'
@@ -25,4 +25,8 @@ __all__ = [
     'RedisTask',
     'RedisTaskQueue',
     'RedisAllocator',
+    'RedisAllocatorObject',
+    'RedisAllocatorUpdater',
+    'RedisAllocatorPolicy',
+    'DefaultRedisAllocatorPolicy',
 ]

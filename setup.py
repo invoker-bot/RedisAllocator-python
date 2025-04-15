@@ -52,6 +52,7 @@ setup(
     python_requires='>=3.10',
     install_requires=[
         'redis >= 5.0.0',
+        'cachetools >= 5.3.2',
     ],
     tests_require=tests_require,
     extras_require={

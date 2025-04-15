@@ -27,6 +27,7 @@ from threading import current_thread
 from typing import (Optional, TypeVar, Generic,
                     Sequence, Iterable)
 from redis import StrictRedis as Redis
+from cachetools import cached, TTLCache
 from .lock import RedisLockPool, Timeout
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,11 @@ class RedisAllocatorObject(Generic[U]):
         else:
             self.allocator.free(self)
 
+    def open(self):
+        """Open the object."""
+        if self.obj is not None:
+            self.obj.open()
+
     def close(self):
         """Kill the object."""
         if self.obj is not None:
@@ -182,6 +188,13 @@ class RedisAllocatorObject(Generic[U]):
         if self.obj is None:
             return self.key
         return f"{self.key}:{self.obj.unique_id}"
+
+    @property
+    def name(self) -> Optional[str]:
+        """Get the name of the object."""
+        if self.obj is None:
+            return None
+        return self.obj.name
 
     def __del__(self):
         """Delete the object."""
@@ -340,7 +353,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
 
         # Fall back to regular allocation
         # Explicitly call obj.name if obj exists
-        obj_name = obj.name() if obj and hasattr(obj, 'name') and callable(
+        obj_name = obj.name if obj and hasattr(obj, 'name') and callable(
             obj.name) else (obj.name if obj and hasattr(obj, 'name') else None)
         key = allocator.malloc_key(timeout, obj_name,
                                    cache_timeout=cache_timeout)
@@ -351,6 +364,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         self.objects[alloc_obj.unique_id] = alloc_obj
         return alloc_obj
 
+    @cached(TTLCache(maxsize=64, ttl=5))
     def _try_refresh_pool(self, allocator: 'RedisAllocator'):
         """Try to refresh the pool if necessary and if we can acquire the lock.
 
@@ -441,7 +455,6 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         super().__init__(redis, prefix, suffix=suffix, eps=eps)
         self.shared = shared
-        self.soft_bind_timeout = 3600  # Default timeout for soft bindings (1 hour)
         self.policy = policy or DefaultRedisAllocatorPolicy()
         self.policy.initialize(self)
 
@@ -499,13 +512,13 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             return '{self._cache_str}'
         end
         local function soft_bind_name(name)
-            if name == "" then
+            if name == "" or not name then
                 return ""
             end
             return cache_str() .. ':bind:' .. name
         end
         local function split_pool_value(value)
-            if value == nil then
+            if not value or value == "" then
                 return "", "", -1
             end
             value = tostring(value)
@@ -552,7 +565,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         end
         local function pop_from_head()  -- pop the item from the free list
             local head = redis.call("GET", headKey)
-            if head == nil or head == "" then  -- the free list is empty
+            if not head or head == "" then  -- the free list is empty
                 return nil, -1
             end
             local headVal = redis.call("HGET", poolItemsKey, head)
@@ -561,9 +574,12 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             -- Check if the head item has expired or is locked
             if is_expiry_invalid(headExpiry) then  -- the item has expired
                 redis.call("HDEL", poolItemsKey, head)
+                redis.call("SET", headKey, headNext)
                 return pop_from_head()
             end
-            if redis.call("EXISTS", key_str(head)) then  -- the item is locked
+            if redis.call("EXISTS", key_str(head)) > 0 then  -- the item is locked
+                redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
+                redis.call("SET", headKey, headNext)
                 return pop_from_head()
             end
             local prev, next, expiry = split_pool_value(headVal)
@@ -576,11 +592,14 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 redis.call("HSET", poolItemsKey, next, join_pool_value("", nextNext, nextExpiry))
                 redis.call("SET", headKey, next)
             end
+            redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
             return head, headExpiry
         end
-        local function set_item_allocated(itemName)
-            local val = redis.call("HGET", poolItemsKey, itemName)
-            if val ~= nil then
+        local function set_item_allocated(itemName, val)
+            if not val then
+                val = redis.call("HGET", poolItemsKey, itemName)
+            end
+            if val then
                 local prev, next, expiry = split_pool_value(val)
                 if prev ~= "#ALLOCATED" then
                     if is_expiry_invalid(expiry) then
@@ -604,32 +623,28 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                     else
                         redis.call("SET", tailKey, prev or "")
                     end
-                    redis.call("SET", key_str(itemName), join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
+                    redis.call("HSET", poolItemsKey, itemName, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
                 end
             end
         end
         local function check_item_health(itemName, value)
-            if value == nil then
+            if not value then
                 value = redis.call("HGET", pool_str(), itemName)
             end
-            if value then
-                local prev, next, expiry = split_pool_value(value)
-                if prev == "#ALLOCATED" then
-                    local locked = redis.call("EXISTS", key_str(itemName))
-                    if not locked then
-                        push_to_tail(itemName, expiry)
-                    end
-                else
-                    -- Check if the item has expired
-                    if is_expiry_invalid(expiry) then
-                        set_item_allocated(itemName)
-                        redis.call("HDEL", poolItemsKey, itemName)
-                    else
-                        local locked = redis.call("EXISTS", key_str(itemName))
-                        if locked then
-                            set_item_allocated(itemName)
-                        end
-                    end
+            assert(value, "value should not be nil")
+            local prev, next, expiry = split_pool_value(value)
+            if is_expiry_invalid(expiry) then  -- Check if the item has expired
+                set_item_allocated(itemName)
+                redis.call("HDEL", poolItemsKey, itemName)
+            end
+            local locked = redis.call("EXISTS", key_str(itemName)) > 0
+            if prev == "#ALLOCATED" then
+                if not locked then
+                    push_to_tail(itemName, expiry)
+                end
+            else
+                if locked then
+                    set_item_allocated(itemName)
                 end
             end
         end
@@ -644,17 +659,19 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         using push_to_tail() with the specified expiry (calculated from ARGV[1] timeout).
         If a key *does* exist, its expiry time is updated in the pool hash.
         """
-        return self.redis.register_script(f'''{self._lua_required_string}\n
+        return self.redis.register_script(f'''
+        {self._lua_required_string}
         local timeout = tonumber(ARGV[1] or -1)
         local expiry = timeout_to_expiry(timeout)
         for i=2, #ARGV do
             local itemName = ARGV[i]
             local val = redis.call("HGET", poolItemsKey, itemName)
-            if val == nil then
-                push_to_tail(itemName, expiry)
-            else -- refresh the expiry timeout
+            if val then  -- only refresh the expiry timeout
                 local prev, next, _ = split_pool_value(val)
-                redis.call("HSET", poolItemsKey, itemName, join_pool_value(prev, next, expiry))
+                val = join_pool_value(prev, next, expiry)
+                redis.call("HSET", poolItemsKey, itemName, val)
+            else -- refresh the expiry timeout
+                push_to_tail(itemName, expiry)
             end
         end''')
 
@@ -791,7 +808,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         return f"{self._cache_str}:bind:{name}"
 
-    def update_soft_bind(self, name: str, key: str):
+    def update_soft_bind(self, name: str, key: str, timeout: Timeout = 3600):
         """Update a soft binding between a name and a resource.
 
         Soft bindings create a persistent mapping between named objects and allocated keys,
@@ -802,7 +819,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             name: Name to bind
             key: Resource identifier to bind to the name
         """
-        self.update(self._soft_bind_name(name), key, timeout=self.soft_bind_timeout)
+        self.update(self._soft_bind_name(name), key, timeout=timeout)
 
     def unbind_soft_bind(self, name: str):
         """Remove a soft binding.
@@ -814,6 +831,14 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             name: Name of the soft binding to remove
         """
         self.unlock(self._soft_bind_name(name))
+
+    def get_soft_bind(self, name: str) -> Optional[str]:
+        """Get the resource identifier bound to a name.
+
+        Args:
+            name: Name of the soft binding
+        """
+        return self.redis.get(self._soft_bind_name(name))
 
     @cached_property
     def _malloc_script(self):
@@ -838,33 +863,37 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         return self.redis.register_script(f'''
         {self._lua_required_string}
         local shared = {1 if self.shared else 0}
+
         local timeout = tonumber(ARGV[1])
         local name_arg = ARGV[2] -- Original name argument
         local cacheName = soft_bind_name(name_arg) -- Key for soft binding cache
         local cacheTimeout = tonumber(ARGV[3]) -- Timeout for the soft binding cache entry
-
         local function refresh_cache(cacheKey)
             -- Only refresh if a valid name and timeout were provided
-            if name_arg ~= "" and cacheTimeout ~= nil and cacheTimeout > 0 then
-                redis.call("SET", cacheName, cacheKey, "EX", cacheTimeout)
-            elseif name_arg ~= "" then -- If timeout is invalid/zero, set without expiry
-                 redis.call("SET", cacheName, cacheKey)
+            if name_arg ~= "" then
+                if cacheTimeout ~= nil and cacheTimeout > 0 then
+                    redis.call("SET", cacheName, cacheKey, "EX", cacheTimeout)
+                else -- If timeout is invalid/zero, set without expiry
+                    redis.call("SET", cacheName, cacheKey)
+                end
             end
         end
-
         -- Check soft binding only if a name was provided
         if name_arg ~= "" then
             local cachedKey = redis.call("GET", cacheName)
             if cachedKey then
                 -- Check if the cached key exists and is currently locked (in non-shared mode)
-                -- In shared mode, EXISTS will always be false, so we skip this check
-                if not shared and redis.call("EXISTS", key_str(cachedKey)) then
+                if redis.call("HEXISTS", poolItemsKey, cachedKey) <= 0 or redis.call("EXISTS", key_str(cachedKey)) > 0 then
                     -- Cached key is locked, binding is stale, remove it
                     redis.call("DEL", cacheName)
                 else
                     -- Cached key is valid (either not locked or in shared mode)
                     refresh_cache(cachedKey) -- Refresh the cache expiry
-                    return cachedKey -- Return the bound key
+                    if shared == 0 then
+                        redis.call("SET", key_str(cachedKey), "1", "EX", timeout)
+                        set_item_allocated(cachedKey)
+                    end
+                    return cachedKey
                 end
             end
         end
@@ -872,7 +901,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         -- No valid soft bind found, proceed with normal allocation
         local itemName, expiry = pop_from_head()
         if itemName ~= nil then
-            if not shared then
+            if shared == 0 then
                 -- Non-shared mode: Acquire lock
                 if timeout ~= nil and timeout > 0 then
                     redis.call("SET", key_str(itemName), "1", "EX", timeout)
@@ -886,10 +915,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         end
 
         -- If allocation was successful and a name was provided, update the soft bind cache
-        if itemName and name_arg ~= "" then
+        if itemName then
             refresh_cache(itemName)
         end
-
         return itemName
         ''')
 
@@ -917,9 +945,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         cache_timeout_sec = int(self._to_seconds(cache_timeout))
         # Convert integers to strings for Lua script arguments
         return self._malloc_script(args=[
-            str(lock_timeout_sec),
+            lock_timeout_sec,
             name,
-            str(cache_timeout_sec)
+            cache_timeout_sec,
         ])
 
     def malloc(self, timeout: Timeout = 120, obj: Optional[U] = None, params: Optional[dict] = None,
@@ -948,8 +976,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             )
         # No policy, call malloc_key directly
         # Explicitly call obj.name if obj exists
-        name = obj.name() if obj and hasattr(obj, 'name') and callable(
-            obj.name) else (obj.name if obj and hasattr(obj, 'name') else None)
+        name = obj.name if obj and hasattr(obj, 'name') else None
         key = self.malloc_key(timeout, name, cache_timeout=cache_timeout)
         return RedisAllocatorObject(
             self, key, obj, params

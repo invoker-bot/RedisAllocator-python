@@ -45,38 +45,14 @@ def thread_lock():
 @pytest.fixture
 def thread_lock_pool():
     """Create a ThreadLockPool for testing."""
-    pool = ThreadLockPool()
-    yield pool
-    pool.clear()
+    return ThreadLockPool()
 
 
 # Test helper classes
 class _TestObject(RedisAllocatableClass):
     """Test implementation of RedisAllocatableClass for testing."""
 
-    def __init__(self):
-        self.config_key = None
-        self.config_params = None
-        self.closed = False
-
-    def set_config(self, key, params):
-        """Set configuration parameters."""
-        self.config_key = key
-        self.config_params = params
-
-    def close(self):
-        """Mark the object as closed."""
-        self.closed = True
-
-    def name(self):
-        """Return a name for soft binding."""
-        return "test_object"
-
-
-class _TestNamedObject(RedisAllocatableClass):
-    """Test implementation of RedisAllocatableClass with a name."""
-
-    def __init__(self, name):
+    def __init__(self, name=None):
         self.config_key = None
         self.config_params = None
         self.closed = False
@@ -87,13 +63,17 @@ class _TestNamedObject(RedisAllocatableClass):
         self.config_key = key
         self.config_params = params
 
+    def open(self):
+        """Open the object."""
+        self.closed = False
+
     def close(self):
         """Mark the object as closed."""
         self.closed = True
 
     @property
     def name(self):
-        """Return the object name for soft binding."""
+        """Return a name for soft binding."""
         return self._name
 
 
@@ -111,34 +91,20 @@ class _TestUpdater(RedisAllocatorUpdater):
 
 
 # Additional fixtures
-@pytest.fixture
-def test_object() -> _TestObject:
+@pytest.fixture(params=[None, "test_object"])
+def test_object(request: pytest.FixtureRequest) -> _TestObject:
     """Create a test object implementing RedisAllocatableClass."""
-    return _TestObject()
+    return _TestObject(request.param)
 
 
-@pytest.fixture
-def redis_allocator(redis_client: Redis) -> RedisAllocator:
+@pytest.fixture(params=[False, True])
+def redis_allocator(redis_client: Redis, request: pytest.FixtureRequest) -> RedisAllocator:
     """Create a RedisAllocator instance for testing."""
     alloc = RedisAllocator(
         redis_client,
         'test',
         'alloc-lock',
-        shared=False
-    )
-    # Set up initial keys
-    alloc.extend(['key1', 'key2', 'key3'])
-    return alloc
-
-
-@pytest.fixture
-def shared_allocator(redis_client: Redis) -> RedisAllocator:
-    """Create a shared RedisAllocator instance for testing."""
-    alloc = RedisAllocator(
-        redis_client,
-        'test',
-        'shared-alloc',
-        shared=True
+        shared=request.param
     )
     # Set up initial keys
     alloc.extend(['key1', 'key2', 'key3'])
@@ -156,19 +122,23 @@ def health_checker(redis_client: Redis) -> RedisThreadHealthCheckPool:
 
 
 @pytest.fixture
-def named_object() -> _TestNamedObject:
-    """Create a test object with a name."""
-    return _TestNamedObject("test_named_object")
-
-
-@pytest.fixture
 def test_updater() -> _TestUpdater:
     """Create a test updater."""
-    return _TestUpdater([["key1", "key2"], ["key3"], ["key4", "key5", "key6"]])
+    return _TestUpdater([["key1", "key2"], ["key4", "key5", "key6"], ["key7", "key8", "key9"]])
 
 
-@pytest.fixture
-def allocator_with_policy(redis_client: Redis, test_updater: _TestUpdater) -> RedisAllocator:
+class _TestRedisAllocator(RedisAllocator):
+
+    @property
+    def _lua_required_string(self):
+        return f'''
+        os.time = function() return tonumber(redis.call("TIME")[1]) end
+        {super()._lua_required_string}
+        '''
+
+
+@pytest.fixture(params=[False, True])
+def allocator_with_policy(redis_client: Redis, test_updater: _TestUpdater, request: pytest.FixtureRequest) -> RedisAllocator:
     """Create a RedisAllocator with a default policy."""
     policy = DefaultRedisAllocatorPolicy(
         gc_count=2,
@@ -177,11 +147,11 @@ def allocator_with_policy(redis_client: Redis, test_updater: _TestUpdater) -> Re
         updater=test_updater
     )
 
-    alloc = RedisAllocator(
+    alloc = _TestRedisAllocator(
         redis_client,
         'test-policy',
         'alloc-lock',
-        shared=False,
+        shared=request.param,
         policy=policy
     )
 
