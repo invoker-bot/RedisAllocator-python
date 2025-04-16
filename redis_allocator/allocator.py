@@ -97,7 +97,7 @@ class RedisAllocatableClass(ABC):
 
     def open(self):
         """Open the object."""
-        pass
+        return self
 
     def close(self):
         """close the object."""
@@ -162,6 +162,7 @@ class RedisAllocatorObject(Generic[U]):
         """Open the object."""
         if self.obj is not None:
             self.obj.open()
+        return self
 
     def close(self):
         """Kill the object."""
@@ -282,9 +283,11 @@ class RedisAllocatorPolicy(ABC):
 
     def check_health_once(self, r_obj: RedisAllocatorObject, duration: int = 3600) -> bool:
         """Check the health of the object."""
-        with contextlib.closing(r_obj):
+        with contextlib.closing(r_obj.open()):
             try:
                 if r_obj.is_healthy():
+                    if r_obj.allocator.shared:
+                        r_obj.allocator.unlock(r_obj.key)  # set the key as free
                     return True
                 else:
                     r_obj.set_unhealthy(duration)

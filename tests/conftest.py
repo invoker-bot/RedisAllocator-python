@@ -66,6 +66,7 @@ class _TestObject(RedisAllocatableClass):
     def open(self):
         """Open the object."""
         self.closed = False
+        return self
 
     def close(self):
         """Mark the object as closed."""
