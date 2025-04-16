@@ -20,10 +20,12 @@ Key features:
 import atexit
 import logging
 import weakref
+import contextlib
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Callable
 from functools import cached_property
 from threading import current_thread
+from concurrent.futures import ThreadPoolExecutor
 from typing import (Optional, TypeVar, Generic,
                     Sequence, Iterable)
 from redis import StrictRedis as Redis
@@ -166,6 +168,12 @@ class RedisAllocatorObject(Generic[U]):
         if self.obj is not None:
             self.obj.close()
 
+    def is_healthy(self) -> bool:
+        """Check if the object is healthy."""
+        if self.obj is not None:
+            return self.obj.is_healthy()
+        return True
+
     def set_unhealthy(self, duration: int = 3600):
         """Set the object as unhealthy."""
         if self.obj is not None and self.obj.name is not None:
@@ -271,6 +279,47 @@ class RedisAllocatorPolicy(ABC):
             allocator: The RedisAllocator instance
         """
         pass
+
+    def check_health_once(self, r_obj: RedisAllocatorObject, duration: int = 3600) -> bool:
+        """Check the health of the object."""
+        with contextlib.closing(r_obj):
+            try:
+                if r_obj.is_healthy():
+                    return True
+                else:
+                    r_obj.set_unhealthy(duration)
+                    return False
+            except Exception as e:
+                logger.error(f"Error checking health of {r_obj.key}: {e}")
+                r_obj.set_unhealthy(duration)
+                raise
+
+    def check_health(self, allocator: 'RedisAllocator', lock_duration: Timeout = 3600, max_threads: int = 8,
+                     obj_fn: Optional[Callable[[str], Any]] = None,
+                     params_fn: Optional[Callable[[str], dict]] = None) -> tuple[int, int]:
+        """Check the health of the allocator.
+
+        Args:
+            allocator: The RedisAllocator instance
+            lock_duration: The duration of the lock (in seconds)
+            max_threads: The maximum number of threads to use
+
+        Returns:
+            A tuple containing the number of healthy and unhealthy items in the allocator
+        """
+        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            for key in allocator.keys():
+                if params_fn is not None:
+                    params = params_fn(key)
+                else:
+                    params = None
+                if obj_fn is not None:
+                    obj = obj_fn(key)
+                else:
+                    obj = None
+                alloc_obj = RedisAllocatorObject(allocator, key, obj, params)
+                executor.submit(self.check_health_once, alloc_obj, lock_duration)
+            executor.shutdown(wait=True)
 
 
 class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
