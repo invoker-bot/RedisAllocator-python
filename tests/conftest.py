@@ -127,16 +127,6 @@ def test_updater() -> _TestUpdater:
     return _TestUpdater([["key1", "key2"], ["key4", "key5", "key6"], ["key7", "key8", "key9"]])
 
 
-class _TestRedisAllocator(RedisAllocator):
-
-    @property
-    def _lua_required_string(self):
-        return f'''
-        os.time = function() return tonumber(redis.call("TIME")[1]) end
-        {super()._lua_required_string}
-        '''
-
-
 @pytest.fixture(params=[False, True])
 def allocator_with_policy(redis_client: Redis, test_updater: _TestUpdater, request: pytest.FixtureRequest) -> RedisAllocator:
     """Create a RedisAllocator with a default policy."""
@@ -147,7 +137,7 @@ def allocator_with_policy(redis_client: Redis, test_updater: _TestUpdater, reque
         updater=test_updater
     )
 
-    alloc = _TestRedisAllocator(
+    alloc = RedisAllocator(
         redis_client,
         'test-policy',
         'alloc-lock',

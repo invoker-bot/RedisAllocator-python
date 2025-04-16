@@ -550,6 +550,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         return f'''
         {super()._lua_required_string}
+        local function time()
+            return tonumber(redis.call("TIME")[1])
+        end
         local function pool_pointer_str(head)
             local pointer_type = 'head'
             if not head then
@@ -584,10 +587,10 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             if timeout == nil or timeout <= 0 then
                 return -1
             end
-            return os.time() + timeout
+            return time() + timeout
         end
         local function is_expiry_invalid(expiry)
-            return expiry ~= nil and expiry > 0 and expiry <= os.time()
+            return expiry ~= nil and expiry > 0 and expiry <= time()
         end
         local function is_expired(value)
             local _, _, expiry = split_pool_value(value)
