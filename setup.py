@@ -3,7 +3,11 @@
 """Setup script for redis-allocator."""
 from setuptools import setup, find_packages
 
-__version__ = '0.0.1'
+_version = {}
+with open('redis_allocator/_version.py', 'r', encoding='utf-8') as f:
+    exec(f.read(), _version)  # pylint: disable=exec-used
+    __version__ = _version['__version__']
+
 
 with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
