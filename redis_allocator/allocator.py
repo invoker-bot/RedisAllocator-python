@@ -175,21 +175,42 @@ class RedisAllocatorObject(Generic[U]):
             return self.obj.is_healthy()
         return True
 
-    def set_unhealthy(self, duration: int = 3600):
+    def set_healthy(self, duration: Timeout = 3600):
+        """Set the object as healthy."""
+        if self.obj is not None and self.obj.name is not None:
+            self.allocator.update_soft_bind(self.obj.name, self.key, duration)
+        if self.allocator.shared:
+            self.allocator.unlock(self.key)
+
+    def set_unhealthy(self, duration: Timeout = 3600):
         """Set the object as unhealthy."""
         if self.obj is not None and self.obj.name is not None:
             self.allocator.unbind_soft_bind(self.obj.name)
         self.allocator.update(self.key, timeout=duration)
 
-    def refresh(self, timeout: Timeout = 120):
+    def refresh(self, timeout: Timeout = 120, cache_timeout: Timeout = 3600):
         """Refresh the object."""
         self.close()
         new_obj = self.allocator.policy.malloc(self.allocator, timeout=timeout,
-                                               obj=self.obj, params=self.params)
+                                               obj=self.obj, params=self.params,
+                                               cache_timeout=cache_timeout)
         if new_obj is not None:
             self.obj = new_obj.obj
             self.key = new_obj.key
             self.params = new_obj.params
+            self.open()
+
+    def refresh_until_healthy(self, timeout: Timeout = 120, max_attempts: int = 10, lock_duration: Timeout = 3600, cache_timeout: Timeout = 3600):
+        """Refresh the object until it is healthy."""
+        for _ in range(max_attempts):
+            try:
+                if self.is_healthy():
+                    return
+            except Exception as e:
+                logger.error(f"Error checking health of {self.key}: {e}")
+            self.set_unhealthy(lock_duration)
+            self.refresh(timeout, cache_timeout)
+        raise RuntimeError("the objects is still unhealthy after %d attempts", max_attempts)
 
     @property
     def unique_id(self) -> str:
@@ -311,6 +332,7 @@ class RedisAllocatorPolicy(ABC):
             A tuple containing the number of healthy and unhealthy items in the allocator
         """
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            inputs = []
             for key in allocator.keys():
                 if params_fn is not None:
                     params = params_fn(key)
@@ -320,9 +342,11 @@ class RedisAllocatorPolicy(ABC):
                     obj = obj_fn(key)
                 else:
                     obj = None
-                alloc_obj = RedisAllocatorObject(allocator, key, obj, params)
-                executor.submit(self.check_health_once, alloc_obj, lock_duration)
-            executor.shutdown(wait=True)
+                inputs.append(RedisAllocatorObject(allocator, key, obj, params))
+            results = list(executor.map(self.check_health_once, inputs, timeout=max_threads * lock_duration / (len(inputs) + 1)))
+            healthy = sum(results)
+            unhealthy = len(results) - healthy
+            return healthy, unhealthy
 
 
 class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
@@ -349,7 +373,8 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
     """
 
     def __init__(self, gc_count: int = 5, update_interval: int = 300,
-                 expiry_duration: int = -1, updater: Optional[RedisAllocatorUpdater] = None):
+                 expiry_duration: int = -1, updater: Optional[RedisAllocatorUpdater] = None,
+                 auto_close: bool = False):
         """Initialize the default allocation policy.
 
         Args:
@@ -357,6 +382,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
             update_interval: Interval in seconds between pool updates
             expiry_duration: Default timeout for pool items (-1 means no timeout)
             updater: Optional updater for refreshing the pool's keys
+            auto_close: If True, the allocator will automatically close the object when it is not unique
         """
         self.gc_count = gc_count
         self.update_interval: float = update_interval
@@ -365,6 +391,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         self._allocator: Optional[weakref.ReferenceType['RedisAllocator']] = None
         self._update_lock_key: Optional[str] = None
         self.objects: weakref.WeakValueDictionary[str, RedisAllocatorObject] = weakref.WeakValueDictionary()
+        self.auto_close = auto_close
 
     def initialize(self, allocator: 'RedisAllocator'):
         """Initialize the policy with an allocator instance.
@@ -410,9 +437,10 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         key = allocator.malloc_key(timeout, obj_name,
                                    cache_timeout=cache_timeout)
         alloc_obj = RedisAllocatorObject(allocator, key, obj, params)
-        old_obj = self.objects.get(alloc_obj.unique_id, None)
-        if old_obj is not None:
-            old_obj.close()
+        if self.auto_close:
+            old_obj = self.objects.get(alloc_obj.unique_id, None)
+            if old_obj is not None:
+                old_obj.close()
         self.objects[alloc_obj.unique_id] = alloc_obj
         return alloc_obj
 
