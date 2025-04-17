@@ -257,14 +257,14 @@ class RedisAllocatorUpdater:
         return len(self.params)
 
 
-class RedisAllocatorPolicy(ABC):
+class RedisAllocatorPolicy(ABC, Generic[U]):
     """Abstract base class for Redis allocator policies.
 
     This class defines the interface for allocation policies that can be used
     with RedisAllocator to control allocation behavior.
     """
 
-    def initialize(self, allocator: 'RedisAllocator'):
+    def initialize(self, allocator: 'RedisAllocator[U]'):
         """Initialize the policy with an allocator instance.
 
         Args:
@@ -273,9 +273,9 @@ class RedisAllocatorPolicy(ABC):
         pass
 
     @abstractmethod
-    def malloc(self, allocator: 'RedisAllocator', timeout: Timeout = 120,
-               obj: Optional[Any] = None, params: Optional[dict] = None,
-               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject]:
+    def malloc(self, allocator: 'RedisAllocator[U]', timeout: Timeout = 120,
+               obj: Optional[U] = None, params: Optional[dict] = None,
+               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject[U]]:
         """Allocate a resource according to the policy.
 
         Args:
@@ -292,7 +292,7 @@ class RedisAllocatorPolicy(ABC):
         pass
 
     @abstractmethod
-    def refresh_pool(self, allocator: 'RedisAllocator'):
+    def refresh_pool(self, allocator: 'RedisAllocator[U]'):
         """Refresh the allocation pool.
 
         This method is called periodically to update the pool with new resources.
@@ -302,7 +302,7 @@ class RedisAllocatorPolicy(ABC):
         """
         pass
 
-    def check_health_once(self, r_obj: RedisAllocatorObject, duration: int = 3600) -> bool:
+    def check_health_once(self, r_obj: RedisAllocatorObject[U], duration: int = 3600) -> bool:
         """Check the health of the object."""
         with contextlib.closing(r_obj.open()):
             try:
@@ -318,8 +318,8 @@ class RedisAllocatorPolicy(ABC):
                 r_obj.set_unhealthy(duration)
                 raise
 
-    def check_health(self, allocator: 'RedisAllocator', lock_duration: Timeout = 3600, max_threads: int = 8,
-                     obj_fn: Optional[Callable[[str], Any]] = None,
+    def check_health(self, allocator: 'RedisAllocator[U]', lock_duration: Timeout = 3600, max_threads: int = 8,
+                     obj_fn: Optional[Callable[[str], U]] = None,
                      params_fn: Optional[Callable[[str], dict]] = None) -> tuple[int, int]:
         """Check the health of the allocator.
 
@@ -349,7 +349,7 @@ class RedisAllocatorPolicy(ABC):
             return healthy, unhealthy
 
 
-class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
+class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
     """Default implementation of RedisAllocatorPolicy.
 
     This policy provides the following features:
@@ -393,7 +393,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         self.objects: weakref.WeakValueDictionary[str, RedisAllocatorObject] = weakref.WeakValueDictionary()
         self.auto_close = auto_close
 
-    def initialize(self, allocator: 'RedisAllocator'):
+    def initialize(self, allocator: 'RedisAllocator[U]'):
         """Initialize the policy with an allocator instance.
 
         Args:
@@ -403,9 +403,9 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         self._update_lock_key = f"{allocator._pool_str()}|policy_update_lock"
         atexit.register(lambda: self.finalize(self._allocator()))
 
-    def malloc(self, allocator: 'RedisAllocator', timeout: Timeout = 120,
-               obj: Optional[Any] = None, params: Optional[dict] = None,
-               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject]:
+    def malloc(self, allocator: 'RedisAllocator[U]', timeout: Timeout = 120,
+               obj: Optional[U] = None, params: Optional[dict] = None,
+               cache_timeout: Timeout = 3600) -> Optional[RedisAllocatorObject[U]]:
         """Allocate a resource according to the policy.
 
         This implementation:
@@ -445,7 +445,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         return alloc_obj
 
     @cached(TTLCache(maxsize=64, ttl=5))
-    def _try_refresh_pool(self, allocator: 'RedisAllocator'):
+    def _try_refresh_pool(self, allocator: 'RedisAllocator[U]'):
         """Try to refresh the pool if necessary and if we can acquire the lock.
 
         Args:
@@ -457,7 +457,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
             # If we got here, we acquired the lock, so we can update the pool
             self.refresh_pool(allocator)
 
-    def refresh_pool(self, allocator: 'RedisAllocator'):
+    def refresh_pool(self, allocator: 'RedisAllocator[U]'):
         """Refresh the allocation pool using the updater.
 
         Args:
@@ -478,7 +478,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy):
         else:
             allocator.extend(keys, timeout=self.expiry_duration)
 
-    def finalize(self, allocator: 'RedisAllocator'):
+    def finalize(self, allocator: 'RedisAllocator[U]'):
         """Finalize the policy."""
         for obj in self.objects.values():
             obj.close()
@@ -521,7 +521,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     """
 
     def __init__(self, redis: Redis, prefix: str, suffix='allocator', eps=1e-6,
-                 shared=False, policy: Optional[RedisAllocatorPolicy] = None):
+                 shared=False, policy: Optional[RedisAllocatorPolicy[U]] = None):
         """Initializes the RedisAllocator.
 
         Args:
