@@ -175,7 +175,7 @@ if allocated_obj:
 
 # Using soft binding (associates a name with a resource)
 allocator.update_soft_bind("worker-1", "resource-1")
-# Later...
+# Unbind soft binding
 allocator.unbind_soft_bind("worker-1")
 
 # Garbage collection (reclaims unused resources)
@@ -236,9 +236,9 @@ graph TD
 
     subgraph "PoolHash Contents (Doubly-Linked Free List)"
         Key1 --> Key2["Key2: Key1||Key3||Expiry"]
-        Key2 --> Key3["Key3: Key2||...||Expiry"]
-        Key3 --> ...
-        KeyN_1[...] --> KeyN
+        Key2 --> Key3["Key3: Key2||Key4||Expiry"]
+        Key3 --> Key4["Key4: Key3||Key5||Expiry"]
+        KeyN_1["KeyN: KeyN-1||&quot;&quot;||Expiry"] --> KeyN
     end
 
     subgraph "Allocated Keys (Non-Shared Mode)"

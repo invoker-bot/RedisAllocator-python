@@ -134,7 +134,7 @@ if allocated_obj:
 
 # 使用软绑定（将名称与资源关联）
 allocator.update_soft_bind("worker-1", "resource-1")
-# 稍后...
+# 解绑软绑定
 allocator.unbind_soft_bind("worker-1")
 
 # 垃圾回收（回收未使用的资源）
@@ -195,9 +195,9 @@ graph TD
 
     subgraph "PoolHash 内容 (双向空闲链表)"
         Key1 --> Key2["键2: 键1||键3||过期时间"]
-        Key2 --> Key3["键3: 键2||...||过期时间"]
-        Key3 --> ...
-        KeyN_1[...] --> KeyN
+        Key2 --> Key3["键3: 键2||键4||过期时间"]
+        Key3 --> Key4["键4: 键3||键5||过期时间"]
+        KeyN_1["键N: 键N-1||&quot;&quot;||过期时间"] --> KeyN
     end
 
     subgraph "已分配的键 (非共享模式)"
