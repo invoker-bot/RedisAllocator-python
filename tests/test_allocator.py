@@ -214,6 +214,8 @@ class TestRedisAllocatorObject:
         obj.close()
         assert test_object.closed
         obj.close()  # Should not raise
+        obj.refresh()
+        assert not test_object.closed
 
     def test_del(self, redis_allocator: RedisAllocator, test_object: _TestObject, mocker: MockFixture):
         """Test the __del__ method."""

@@ -199,6 +199,8 @@ class RedisAllocatorObject(Generic[U]):
             self.key = new_obj.key
             self.params = new_obj.params
             self.open()
+        elif self.obj is not None:
+            logger.error("Failed to refresh the object %s", self.key)
 
     def refresh_until_healthy(self, timeout: Timeout = 120, max_attempts: int = 10, lock_duration: Timeout = 3600, cache_timeout: Timeout = 3600):
         """Refresh the object until it is healthy."""
@@ -226,9 +228,9 @@ class RedisAllocatorObject(Generic[U]):
             return None
         return self.obj.name
 
-    def __del__(self):
-        """Delete the object."""
-        self.close()
+    # def __del__(self):
+    #     """Delete the object."""
+    #     self.close()
 
 
 class RedisAllocatorUpdater:
