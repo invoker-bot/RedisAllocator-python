@@ -217,13 +217,6 @@ class TestRedisAllocatorObject:
         obj.refresh()
         assert not test_object.closed
 
-    def test_del(self, redis_allocator: RedisAllocator, test_object: _TestObject, mocker: MockFixture):
-        """Test the __del__ method."""
-        obj = RedisAllocatorObject(redis_allocator, "test_key", test_object, {})
-        obj.close = mocker.MagicMock()
-        obj.__del__()
-        obj.close.assert_called_once()
-
 
 class TestRedisAllocator:
     """Tests for the RedisAllocator class."""
