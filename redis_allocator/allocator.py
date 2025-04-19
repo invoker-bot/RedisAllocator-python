@@ -643,7 +643,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             else
                 local tailVal = redis.call("HGET", poolItemsKey, tail)
                 local prev, next, expiry = split_pool_value(tailVal)
-                assert(next == "", "tail is not the last item in the free list")
+                assert(next == "" or next == '#ALLOCATED', "tail is not the last item in the free list")
                 redis.call("HSET", poolItemsKey, tail, join_pool_value(prev, itemName, expiry))
             end
             redis.call("SET", tailKey, itemName)  -- set the tail point to the new item
