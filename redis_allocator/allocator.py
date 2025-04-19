@@ -634,6 +634,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local tailKey      = pool_pointer_str(false)
         local function push_to_tail(itemName, expiry)  -- push the item to the free list
             local tail = redis.call("GET", tailKey)
+            local head = redis.call("GET", headKey)
             if not tail then
                 tail = ""
             end
@@ -648,6 +649,28 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             end
             redis.call("SET", tailKey, itemName)  -- set the tail point to the new item
         end
+        -- Ensure the new head node is well-formed (prev="") and update tail/head
+        local function set_item_head_nil(nextItemName)
+            if nextItemName == "" then
+                -- list becomes empty
+                redis.call("SET", headKey, "")
+                redis.call("SET", tailKey, "")
+                return
+            end
+
+            local nextVal = redis.call("HGET", poolItemsKey, nextItemName)
+            if not nextVal then
+                -- corrupted pointer, clear list
+                redis.call("SET", headKey, "")
+                redis.call("SET", tailKey, "")
+                return
+            end
+
+            local _prev, nextNext, nextExpiry = split_pool_value(nextVal)
+            if _prev ~= "" then
+                redis.call("HSET", poolItemsKey, nextItemName, join_pool_value("", nextNext, nextExpiry))
+            end
+        end
         local function pop_from_head()  -- pop the item from the free list
             local head = redis.call("GET", headKey)
             if not head or head == "" then  -- the free list is empty
@@ -660,29 +683,33 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             if is_expiry_invalid(headExpiry) then  -- the item has expired
                 redis.call("HDEL", poolItemsKey, head)
                 redis.call("SET", headKey, headNext)
+                set_item_head_nil(headNext)
                 return pop_from_head()
-            end
-            if redis.call("EXISTS", key_str(head)) > 0 then  -- the item is locked
+            elseif redis.call("EXISTS", key_str(head)) > 0 then  -- the item is locked
                 redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
                 redis.call("SET", headKey, headNext)
+                set_item_head_nil(headNext)
                 return pop_from_head()
-            end
-            local prev, next, expiry = split_pool_value(headVal)
-            if next == "" then  -- the item is the last in the free list
+            elseif headNext == "" then  -- the item is the last in the free list
                 redis.call("SET", headKey, "")
                 redis.call("SET", tailKey, "")
             else
-                local nextVal = redis.call("HGET", poolItemsKey, next)
+                local nextVal = redis.call("HGET", poolItemsKey, headNext)
                 local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)
-                redis.call("HSET", poolItemsKey, next, join_pool_value("", nextNext, nextExpiry))
-                redis.call("SET", headKey, next)
+                redis.call("HSET", poolItemsKey, headNext, join_pool_value("", nextNext, nextExpiry))
+                redis.call("SET", headKey, headNext)
             end
-            redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
+            redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
+            -- If we removed the current head, update head pointer
+            local savedHead = redis.call("GET", headKey)
+            if savedHead == itemName then
+                redis.call("SET", headKey, next or "")
+            end
             return head, headExpiry
         end
         local function set_item_allocated(itemName, val)
             if not val then
-                val = redis.call("HGET", poolItemsKey, itemName)
+                val = redis.call("HGET", pool_str(), itemName)
             end
             if val then
                 local prev, next, expiry = split_pool_value(val)
@@ -709,6 +736,22 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                         redis.call("SET", tailKey, prev or "")
                     end
                     redis.call("HSET", poolItemsKey, itemName, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
+                    -- If we removed the current head, update head pointer
+                    local savedHead = redis.call("GET", headKey)
+                    if savedHead == itemName then
+                        redis.call("SET", headKey, next or "")
+                    end
+                end
+            end
+            -- Invariant fix: ensure current head's prev pointer is always "".
+            local currentHead = redis.call("GET", headKey)
+            if currentHead and currentHead ~= "" then
+                local currentHeadVal = redis.call("HGET", poolItemsKey, currentHead)
+                if currentHeadVal then
+                    local curPrev, curNext, curExpiry = split_pool_value(currentHeadVal)
+                    if curPrev ~= "" then
+                        redis.call("HSET", poolItemsKey, currentHead, join_pool_value("", curNext, curExpiry))
+                    end
                 end
             end
         end
@@ -719,8 +762,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             assert(value, "value should not be nil")
             local prev, next, expiry = split_pool_value(value)
             if is_expiry_invalid(expiry) then  -- Check if the item has expired
-                set_item_allocated(itemName)
+                set_item_allocated(itemName, value)
                 redis.call("HDEL", poolItemsKey, itemName)
+                return
             end
             local locked = redis.call("EXISTS", key_str(itemName)) > 0
             if prev == "#ALLOCATED" then
@@ -729,7 +773,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 end
             else
                 if locked then
-                    set_item_allocated(itemName)
+                    set_item_allocated(itemName, value)
                 end
             end
         end
