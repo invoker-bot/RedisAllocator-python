@@ -700,11 +700,6 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 redis.call("SET", headKey, headNext)
             end
             redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
-            -- If we removed the current head, update head pointer
-            local savedHead = redis.call("GET", headKey)
-            if savedHead == itemName then
-                redis.call("SET", headKey, next or "")
-            end
             return head, headExpiry
         end
         local function set_item_allocated(itemName, val)
