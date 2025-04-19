@@ -1,0 +1,329 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Example: Managing a Proxy Pool with Automatic Updates &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="API Reference" href="../api/index.html" />
+    <link rel="prev" title="Getting Started" href="../getting_started.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Example: Managing a Proxy Pool with Automatic Updates</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#scenario">Scenario</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#core-redisallocator-concepts-used">Core RedisAllocator Concepts Used</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implementation-sketch">Implementation Sketch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#future-enhancements-shown">Future Enhancements Shown</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Example: Managing a Proxy Pool with Automatic Updates</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/examples/proxy_pool.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="example-managing-a-proxy-pool-with-automatic-updates">
+<span id="example-proxy-pool"></span><h1>Example: Managing a Proxy Pool with Automatic Updates<a class="headerlink" href="#example-managing-a-proxy-pool-with-automatic-updates" title="Link to this heading"></a></h1>
+<p>This example demonstrates how <cite>RedisAllocator</cite> can be used for managing a dynamic proxy pool, featuring <strong>automatic pool updates</strong> using the <cite>RedisAllocatorUpdater</cite> integrated with <cite>DefaultRedisAllocatorPolicy</cite>.</p>
+<section id="scenario">
+<h2>Scenario<a class="headerlink" href="#scenario" title="Link to this heading"></a></h2>
+<p>We need a system where:
+1. Proxies are fetched periodically from different <strong>sources</strong> (e.g., APIs, databases).
+2. These fetched proxies automatically update the central Redis pool.
+3. Multiple worker threads allocate exclusive proxies from this pool.
+4. Workers use the proxies for tasks.
+5. Proxies are automatically returned/recovered via <cite>free()</cite> and <cite>gc()</cite>.
+6. (Future) Priority and Soft Binding features enhance allocation.</p>
+</section>
+<section id="core-redisallocator-concepts-used">
+<h2>Core RedisAllocator Concepts Used<a class="headerlink" href="#core-redisallocator-concepts-used" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><cite>RedisAllocator(policy=…)</cite>: Using a policy to control behavior.</p></li>
+<li><p><cite>RedisAllocatorUpdater</cite>: Base class for defining how to fetch resources.</p></li>
+<li><p><cite>DefaultRedisAllocatorPolicy(updater=…)</cite>: Policy that uses an updater to refresh the pool periodically.</p></li>
+<li><p><cite>malloc()</cite>: Workers acquire proxies (triggering policy checks).</p></li>
+<li><p><cite>free()</cite>: Workers return proxies.</p></li>
+<li><p><cite>gc()</cite>: Background process for recovery.</p></li>
+<li><p>Resource Prioritization &amp; Soft Binding: (Mentioned as <strong>TODO</strong> / Future).</p></li>
+</ul>
+</section>
+<section id="implementation-sketch">
+<h2>Implementation Sketch<a class="headerlink" href="#implementation-sketch" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="kn">import</span><span class="w"> </span><span class="nn">redis</span>
+<span class="linenos">  2</span><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="linenos">  3</span><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="linenos">  4</span><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="linenos">  5</span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Any</span>
+<span class="linenos">  6</span><span class="kn">from</span><span class="w"> </span><span class="nn">redis_allocator</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisAllocator</span>
+<span class="linenos">  7</span><span class="c1"># Import base class and default policy</span>
+<span class="linenos">  8</span><span class="kn">from</span><span class="w"> </span><span class="nn">redis_allocator.allocator</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisAllocatorUpdater</span><span class="p">,</span> <span class="n">DefaultRedisAllocatorPolicy</span>
+<span class="linenos">  9</span>
+<span class="linenos"> 10</span><span class="c1"># --- Configuration ---</span>
+<span class="linenos"> 11</span><span class="n">REDIS_HOST</span> <span class="o">=</span> <span class="s1">&#39;localhost&#39;</span>
+<span class="linenos"> 12</span><span class="n">REDIS_PORT</span> <span class="o">=</span> <span class="mi">6379</span>
+<span class="linenos"> 13</span><span class="n">PROXY_POOL_PREFIX</span> <span class="o">=</span> <span class="s1">&#39;myapp&#39;</span>
+<span class="linenos"> 14</span><span class="n">PROXY_POOL_SUFFIX</span> <span class="o">=</span> <span class="s1">&#39;proxies&#39;</span>
+<span class="linenos"> 15</span><span class="n">NUM_WORKERS</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="linenos"> 16</span><span class="n">ALLOCATION_TIMEOUT</span> <span class="o">=</span> <span class="mi">120</span> <span class="c1"># Seconds a proxy can be held</span>
+<span class="linenos"> 17</span>
+<span class="linenos"> 18</span><span class="c1"># --- Custom Updater Implementation ---</span>
+<span class="linenos"> 19</span>
+<span class="linenos"> 20</span><span class="k">class</span><span class="w"> </span><span class="nc">ProxySourceUpdater</span><span class="p">(</span><span class="n">RedisAllocatorUpdater</span><span class="p">):</span>
+<span class="linenos"> 21</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches proxy lists from different predefined sources.&quot;&quot;&quot;</span>
+<span class="linenos"> 22</span>    <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="linenos"> 23</span><span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulates fetching proxies from a specific source URL/ID.&quot;&quot;&quot;</span>
+<span class="linenos"> 24</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">threading</span><span class="o">.</span><span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;Updater&#39;</span><span class="si">}</span><span class="s2">] Fetching proxies from source: </span><span class="si">{</span><span class="n">source_id</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+<span class="linenos"> 25</span>        <span class="c1"># Replace with actual fetching logic (e.g., API call, DB query)</span>
+<span class="linenos"> 26</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span> <span class="c1"># Simulate fetch time</span>
+<span class="linenos"> 27</span>        <span class="k">if</span> <span class="n">source_id</span> <span class="o">==</span> <span class="s1">&#39;source_A_api&#39;</span><span class="p">:</span>
+<span class="linenos"> 28</span>            <span class="c1"># Simulate getting a list of proxy strings</span>
+<span class="linenos"> 29</span>            <span class="n">new_proxies</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s1">&#39;proxy_A_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">:8000&#39;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">))]</span>
+<span class="linenos"> 30</span>        <span class="k">elif</span> <span class="n">source_id</span> <span class="o">==</span> <span class="s1">&#39;source_B_db&#39;</span><span class="p">:</span>
+<span class="linenos"> 31</span>            <span class="n">new_proxies</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s1">&#39;proxy_B_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">:9000&#39;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">))]</span>
+<span class="linenos"> 32</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 33</span>            <span class="n">new_proxies</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># Simulate source being unavailable</span>
+<span class="linenos"> 34</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">threading</span><span class="o">.</span><span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;Updater&#39;</span><span class="si">}</span><span class="s2">] Fetched </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">new_proxies</span><span class="p">)</span><span class="si">}</span><span class="s2"> proxies from </span><span class="si">{</span><span class="n">source_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">new_proxies</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 35</span>        <span class="c1"># TODO: Return priority info when allocator supports it: [(&#39;proxy_A_0:8000&#39;, 10), ...]</span>
+<span class="linenos"> 36</span>        <span class="k">return</span> <span class="n">new_proxies</span>
+<span class="linenos"> 37</span>
+<span class="linenos"> 38</span><span class="c1"># --- Setup ---</span>
+<span class="linenos"> 39</span><span class="n">redis_client</span> <span class="o">=</span> <span class="n">redis</span><span class="o">.</span><span class="n">Redis</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">REDIS_HOST</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">REDIS_PORT</span><span class="p">,</span> <span class="n">decode_responses</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos"> 40</span>
+<span class="linenos"> 41</span><span class="c1"># Define the sources the updater will cycle through</span>
+<span class="linenos"> 42</span><span class="n">PROXY_SOURCES</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;source_A_api&#39;</span><span class="p">,</span> <span class="s1">&#39;source_B_db&#39;</span><span class="p">]</span>
+<span class="linenos"> 43</span><span class="c1"># How often the policy should *try* to run the updater (in seconds)</span>
+<span class="linenos"> 44</span><span class="c1"># The updater only runs if the update_lock is acquired during a malloc call.</span>
+<span class="linenos"> 45</span><span class="n">UPDATE_INTERVAL</span> <span class="o">=</span> <span class="mi">60</span>
+<span class="linenos"> 46</span><span class="c1"># Optional: Default expiry for items added by the updater (-1 = no expiry)</span>
+<span class="linenos"> 47</span><span class="n">UPDATER_ITEM_EXPIRY</span> <span class="o">=</span> <span class="mi">3600</span>
+<span class="linenos"> 48</span>
+<span class="linenos"> 49</span><span class="c1"># 1. Instantiate the custom Updater</span>
+<span class="linenos"> 50</span><span class="n">proxy_updater</span> <span class="o">=</span> <span class="n">ProxySourceUpdater</span><span class="p">(</span><span class="n">params</span><span class="o">=</span><span class="n">PROXY_SOURCES</span><span class="p">)</span>
+<span class="linenos"> 51</span>
+<span class="linenos"> 52</span><span class="c1"># 2. Instantiate the Policy, providing the updater</span>
+<span class="linenos"> 53</span><span class="n">default_policy</span> <span class="o">=</span> <span class="n">DefaultRedisAllocatorPolicy</span><span class="p">(</span>
+<span class="linenos"> 54</span>    <span class="n">updater</span><span class="o">=</span><span class="n">proxy_updater</span><span class="p">,</span>
+<span class="linenos"> 55</span>    <span class="n">update_interval</span><span class="o">=</span><span class="n">UPDATE_INTERVAL</span><span class="p">,</span>
+<span class="linenos"> 56</span>    <span class="n">expiry_duration</span><span class="o">=</span><span class="n">UPDATER_ITEM_EXPIRY</span><span class="p">,</span>
+<span class="linenos"> 57</span>    <span class="n">gc_count</span><span class="o">=</span><span class="mi">5</span> <span class="c1"># How many items GC checks per malloc call</span>
+<span class="linenos"> 58</span><span class="p">)</span>
+<span class="linenos"> 59</span>
+<span class="linenos"> 60</span><span class="c1"># 3. Instantiate the Allocator using the configured Policy</span>
+<span class="linenos"> 61</span><span class="n">proxy_allocator</span> <span class="o">=</span> <span class="n">RedisAllocator</span><span class="p">(</span>
+<span class="linenos"> 62</span>    <span class="n">redis_client</span><span class="p">,</span>
+<span class="linenos"> 63</span>    <span class="n">prefix</span><span class="o">=</span><span class="n">PROXY_POOL_PREFIX</span><span class="p">,</span>
+<span class="linenos"> 64</span>    <span class="n">suffix</span><span class="o">=</span><span class="n">PROXY_POOL_SUFFIX</span><span class="p">,</span>
+<span class="linenos"> 65</span>    <span class="n">shared</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="c1"># Proxies are used exclusively</span>
+<span class="linenos"> 66</span>    <span class="n">policy</span><span class="o">=</span><span class="n">default_policy</span> <span class="c1"># IMPORTANT: Use the policy</span>
+<span class="linenos"> 67</span><span class="p">)</span>
+<span class="linenos"> 68</span>
+<span class="linenos"> 69</span><span class="c1"># --- Proxy Usage Simulation (Remains mostly the same) ---</span>
+<span class="linenos"> 70</span>
+<span class="linenos"> 71</span><span class="k">def</span><span class="w"> </span><span class="nf">get_proxy_config_url</span><span class="p">(</span><span class="n">proxy_key</span><span class="p">):</span>
+<span class="linenos"> 72</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulates fetching configuration for a given proxy key.&quot;&quot;&quot;</span>
+<span class="linenos"> 73</span>    <span class="c1"># In reality, this might query a database or another Redis key</span>
+<span class="linenos"> 74</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">threading</span><span class="o">.</span><span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">] Fetched config for </span><span class="si">{</span><span class="n">proxy_key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 75</span>    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;http://config.server/</span><span class="si">{</span><span class="n">proxy_key</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="linenos"> 76</span>
+<span class="linenos"> 77</span><span class="k">def</span><span class="w"> </span><span class="nf">start_local_proxy</span><span class="p">(</span><span class="n">config_url</span><span class="p">):</span>
+<span class="linenos"> 78</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulates configuring and starting a local proxy process/connection.&quot;&quot;&quot;</span>
+<span class="linenos"> 79</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">threading</span><span class="o">.</span><span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">] Starting proxy using </span><span class="si">{</span><span class="n">config_url</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 80</span>    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span> <span class="c1"># Simulate startup time</span>
+<span class="linenos"> 81</span>    <span class="k">return</span> <span class="kc">True</span> <span class="c1"># Simulate success</span>
+<span class="linenos"> 82</span>
+<span class="linenos"> 83</span><span class="c1"># --- Scrape Target Simulation (Remains the same) ---</span>
+<span class="linenos"> 84</span>
+<span class="linenos"> 85</span><span class="k">def</span><span class="w"> </span><span class="nf">fetch_scrape_target</span><span class="p">():</span>
+<span class="linenos"> 86</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulates fetching the next high-priority item to scrape.&quot;&quot;&quot;</span>
+<span class="linenos"> 87</span>    <span class="c1"># TODO: Target fetching logic is application-specific.</span>
+<span class="linenos"> 88</span>    <span class="c1">#       Could use another Redis list, queue, or even another Allocator</span>
+<span class="linenos"> 89</span>    <span class="c1">#       if targets themselves are managed resources. Priority needed here too.</span>
+<span class="linenos"> 90</span>    <span class="n">targets</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;item_A&quot;</span><span class="p">,</span> <span class="s2">&quot;item_B&quot;</span><span class="p">,</span> <span class="s2">&quot;item_C&quot;</span><span class="p">,</span> <span class="s2">&quot;item_D&quot;</span><span class="p">,</span> <span class="s2">&quot;item_E&quot;</span><span class="p">]</span>
+<span class="linenos"> 91</span>    <span class="n">target</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span>
+<span class="linenos"> 92</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">threading</span><span class="o">.</span><span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">] Fetched target: </span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 93</span>    <span class="k">return</span> <span class="n">target</span>
+<span class="linenos"> 94</span>
+<span class="linenos"> 95</span><span class="c1"># --- Worker Thread Logic (Remains mostly the same) ---</span>
+<span class="linenos"> 96</span>
+<span class="linenos"> 97</span><span class="k">def</span><span class="w"> </span><span class="nf">worker_thread_logic</span><span class="p">(</span><span class="n">worker_id</span><span class="p">):</span>
+<span class="linenos"> 98</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Main logic for each scraper worker thread.&quot;&quot;&quot;</span>
+<span class="linenos"> 99</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Started.&quot;</span><span class="p">)</span>
+<span class="linenos">100</span>    <span class="n">allocated_proxy_obj</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">101</span>    <span class="n">retry_delay</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="linenos">102</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span> <span class="c1"># Keep trying to allocate and work</span>
+<span class="linenos">103</span>        <span class="k">try</span><span class="p">:</span>
+<span class="linenos">104</span>            <span class="c1"># 1. Allocate a Proxy (This now triggers Policy checks -&gt; GC and Updater)</span>
+<span class="linenos">105</span>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Attempting to allocate proxy...&quot;</span><span class="p">)</span>
+<span class="linenos">106</span>            <span class="n">allocated_proxy_obj</span> <span class="o">=</span> <span class="n">proxy_allocator</span><span class="o">.</span><span class="n">malloc</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">ALLOCATION_TIMEOUT</span><span class="p">)</span>
+<span class="linenos">107</span>
+<span class="linenos">108</span>            <span class="k">if</span> <span class="n">allocated_proxy_obj</span><span class="p">:</span>
+<span class="linenos">109</span>                <span class="n">retry_delay</span> <span class="o">=</span> <span class="mi">1</span> <span class="c1"># Reset delay on success</span>
+<span class="linenos">110</span>                <span class="n">proxy_key</span> <span class="o">=</span> <span class="n">allocated_proxy_obj</span><span class="o">.</span><span class="n">key</span>
+<span class="linenos">111</span>                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Allocated proxy: </span><span class="si">{</span><span class="n">proxy_key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">112</span>
+<span class="linenos">113</span>                <span class="c1"># 2. Simulate using the proxy</span>
+<span class="linenos">114</span>                <span class="n">config_url</span> <span class="o">=</span> <span class="n">get_proxy_config_url</span><span class="p">(</span><span class="n">proxy_key</span><span class="p">)</span>
+<span class="linenos">115</span>                <span class="k">if</span> <span class="n">start_local_proxy</span><span class="p">(</span><span class="n">config_url</span><span class="p">):</span>
+<span class="linenos">116</span>                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Proxy started successfully.&quot;</span><span class="p">)</span>
+<span class="linenos">117</span>
+<span class="linenos">118</span>                    <span class="c1"># 3. Fetch target and simulate work</span>
+<span class="linenos">119</span>                    <span class="n">target</span> <span class="o">=</span> <span class="n">fetch_scrape_target</span><span class="p">()</span>
+<span class="linenos">120</span>                    <span class="k">if</span> <span class="n">target</span><span class="p">:</span>
+<span class="linenos">121</span>                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Simulating scrape of </span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> via </span><span class="si">{</span><span class="n">proxy_key</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+<span class="linenos">122</span>                        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">))</span> <span class="c1"># Simulate work duration</span>
+<span class="linenos">123</span>                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Finished scrape of </span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+<span class="linenos">124</span>
+<span class="linenos">125</span>                <span class="k">else</span><span class="p">:</span>
+<span class="linenos">126</span>                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Failed to start proxy </span><span class="si">{</span><span class="n">proxy_key</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+<span class="linenos">127</span>                    <span class="c1"># Optionally, report this proxy as bad</span>
+<span class="linenos">128</span>
+<span class="linenos">129</span>                <span class="c1"># IMPORTANT: Free the proxy *only after* you are completely done with it for this task</span>
+<span class="linenos">130</span>                <span class="c1"># Move the free call inside the &#39;if allocated_proxy_obj:&#39; block before the loop continues or breaks</span>
+<span class="linenos">131</span>                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Freeing proxy: </span><span class="si">{</span><span class="n">allocated_proxy_obj</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">132</span>                <span class="n">proxy_allocator</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="n">allocated_proxy_obj</span><span class="p">)</span>
+<span class="linenos">133</span>                <span class="n">allocated_proxy_obj</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1"># Clear the reference</span>
+<span class="linenos">134</span>                <span class="c1"># Potentially add a small delay before next allocation attempt</span>
+<span class="linenos">135</span>                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+<span class="linenos">136</span>
+<span class="linenos">137</span>            <span class="k">else</span><span class="p">:</span>
+<span class="linenos">138</span>                <span class="c1"># No proxy available, wait and retry with exponential backoff</span>
+<span class="linenos">139</span>                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] No proxy available. Retrying in </span><span class="si">{</span><span class="n">retry_delay</span><span class="si">}</span><span class="s2">s...&quot;</span><span class="p">)</span>
+<span class="linenos">140</span>                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">retry_delay</span><span class="p">)</span>
+<span class="linenos">141</span>                <span class="n">retry_delay</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">retry_delay</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">30</span><span class="p">)</span> <span class="c1"># Exponential backoff up to 30s</span>
+<span class="linenos">142</span>
+<span class="linenos">143</span>        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<span class="linenos">144</span>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">145</span>            <span class="c1"># Ensure proxy is freed even if an error occurs mid-task</span>
+<span class="linenos">146</span>            <span class="k">if</span> <span class="n">allocated_proxy_obj</span><span class="p">:</span>
+<span class="linenos">147</span>                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[Worker-</span><span class="si">{</span><span class="n">worker_id</span><span class="si">}</span><span class="s2">] Freeing proxy due to error: </span><span class="si">{</span><span class="n">allocated_proxy_obj</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">148</span>                <span class="n">proxy_allocator</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="n">allocated_proxy_obj</span><span class="p">)</span>
+<span class="linenos">149</span>                <span class="n">allocated_proxy_obj</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">150</span>            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span> <span class="c1"># Wait after error before retrying</span>
+<span class="linenos">151</span>        <span class="c1"># Note: The finally block is removed as freeing is handled within the loop/except block</span>
+<span class="linenos">152</span>
+<span class="linenos">153</span><span class="c1"># --- Running the Example ---</span>
+<span class="linenos">154</span>
+<span class="linenos">155</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">156</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting proxy pool example with automatic updates...&quot;</span><span class="p">)</span>
+<span class="linenos">157</span>    <span class="c1"># Note: No initial pool population needed. The updater in the policy handles it.</span>
+<span class="linenos">158</span>    <span class="c1"># The first calls to malloc() by workers will likely trigger the updater.</span>
+<span class="linenos">159</span>
+<span class="linenos">160</span>    <span class="n">threads</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos">161</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">NUM_WORKERS</span><span class="p">):</span>
+<span class="linenos">162</span>        <span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">worker_thread_logic</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">i</span><span class="p">,),</span> <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Worker-</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">163</span>        <span class="n">threads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">thread</span><span class="p">)</span>
+<span class="linenos">164</span>        <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">165</span>
+<span class="linenos">166</span>    <span class="c1"># Keep main thread alive to observe workers (or add proper shutdown logic)</span>
+<span class="linenos">167</span>    <span class="k">try</span><span class="p">:</span>
+<span class="linenos">168</span>        <span class="k">for</span> <span class="n">thread</span> <span class="ow">in</span> <span class="n">threads</span><span class="p">:</span>
+<span class="linenos">169</span>            <span class="n">thread</span><span class="o">.</span><span class="n">join</span><span class="p">()</span> <span class="c1"># Wait for all worker threads indefinitely</span>
+<span class="linenos">170</span>    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+<span class="linenos">171</span>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Ctrl+C detected. Exiting example...&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="future-enhancements-shown">
+<h2>Future Enhancements Shown<a class="headerlink" href="#future-enhancements-shown" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Resource Prioritization:</strong> The comments indicate where proxy and target priorities would be integrated once the feature is implemented in <cite>RedisAllocator</cite>.</p></li>
+<li><p><strong>Soft Binding:</strong> Notes show how soft binding could be used to dedicate specific proxies to high-frequency tasks.</p></li>
+<li><p><strong>Garbage Collection:</strong> The example mentions where <cite>gc()</cite> would typically be called for automatic cleanup.</p></li>
+</ul>
+<p>This example provides a skeleton for building a robust proxy management system on top of <cite>RedisAllocator</cite>, highlighting how its features map to real-world requirements.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../getting_started.html" class="btn btn-neutral float-left" title="Getting Started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../api/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2025, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

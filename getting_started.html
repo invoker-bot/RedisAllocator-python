@@ -1,0 +1,321 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting Started &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Example: Managing a Proxy Pool with Automatic Updates" href="examples/proxy_pool.html" />
+    <link rel="prev" title="Installation" href="installation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-concepts">Basic Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#using-redislock-for-distributed-locking">Using RedisLock for Distributed Locking</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#understanding-lock-timeouts-and-updates">Understanding Lock Timeouts and Updates</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#thread-identification-and-reentrant-locks">Thread Identification and Reentrant Locks</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis-instance-requirements">Redis Instance Requirements</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#using-redisallocator-for-resource-management">Using RedisAllocator for Resource Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#using-redistaskqueue-for-distributed-task-processing">Using RedisTaskQueue for Distributed Task Processing</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#advanced-usage">Advanced Usage</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Getting Started</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/getting_started.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="getting-started">
+<h1>Getting Started<a class="headerlink" href="#getting-started" title="Link to this heading"></a></h1>
+<p>This guide will help you get started with the RedisAllocator library. It covers the basic concepts
+and provides examples for the main functionality.</p>
+<section id="basic-concepts">
+<h2>Basic Concepts<a class="headerlink" href="#basic-concepts" title="Link to this heading"></a></h2>
+<p>RedisAllocator is designed for distributed resource management using Redis as the backend.
+It provides several key components:</p>
+<ul class="simple">
+<li><p><strong>RedisLock</strong>: Distributed locking mechanism</p></li>
+<li><p><strong>RedisAllocator</strong>: Resource allocation and management</p></li>
+<li><p><strong>RedisTaskQueue</strong>: Distributed task processing</p></li>
+</ul>
+</section>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h2>
+<section id="using-redislock-for-distributed-locking">
+<h3>Using RedisLock for Distributed Locking<a class="headerlink" href="#using-redislock-for-distributed-locking" title="Link to this heading"></a></h3>
+<p>RedisLock provides a robust distributed locking mechanism with several important characteristics:</p>
+<ul class="simple">
+<li><p><strong>Single Redis Instance Support</strong>: Works only with a single Redis instance, not with Redis Cluster</p></li>
+<li><p><strong>Automatic Expiry</strong>: Locks automatically expire after a configured timeout to prevent deadlocks</p></li>
+<li><p><strong>Active Update Required</strong>: Lock holders must actively update locks to maintain ownership</p></li>
+<li><p><strong>Thread Identification</strong>: Locks can be associated with thread/process identifiers</p></li>
+<li><p><strong>Reentrant Locking</strong>: Support for reentrant locks with the <cite>rlock</cite> method</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">Redis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis_allocator</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisLock</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="c1"># Initialize Redis client (requires a single Redis instance)</span>
+<span class="n">redis</span> <span class="o">=</span> <span class="n">Redis</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="s1">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">,</span> <span class="n">decode_responses</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># Create a RedisLock instance</span>
+<span class="n">lock</span> <span class="o">=</span> <span class="n">RedisLock</span><span class="p">(</span><span class="n">redis</span><span class="p">,</span> <span class="s2">&quot;myapp&quot;</span><span class="p">,</span> <span class="s2">&quot;resource-lock&quot;</span><span class="p">)</span>
+
+<span class="c1"># Use the current thread ID as the lock identifier</span>
+<span class="n">thread_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">())</span>
+
+<span class="c1"># Acquire a lock with a 60-second timeout</span>
+<span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="s2">&quot;resource-123&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">thread_id</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Perform operations with the locked resource</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Resource locked successfully&quot;</span><span class="p">)</span>
+
+        <span class="c1"># For long-running operations, periodically update the lock</span>
+        <span class="c1"># to prevent timeout expiration</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>  <span class="c1"># Do some work</span>
+
+            <span class="c1"># Extend the lock&#39;s lifetime by updating it</span>
+            <span class="n">lock</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">&quot;resource-123&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">thread_id</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Lock updated, timeout extended&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Example of reentrant locking with rlock (succeeds because same thread_id)</span>
+        <span class="k">if</span> <span class="n">lock</span><span class="o">.</span><span class="n">rlock</span><span class="p">(</span><span class="s2">&quot;resource-123&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">thread_id</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Successfully re-locked the resource&quot;</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="c1"># Release the lock when done</span>
+        <span class="n">lock</span><span class="o">.</span><span class="n">unlock</span><span class="p">(</span><span class="s2">&quot;resource-123&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Resource unlocked&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Could not acquire lock - resource is busy&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="understanding-lock-timeouts-and-updates">
+<h4>Understanding Lock Timeouts and Updates<a class="headerlink" href="#understanding-lock-timeouts-and-updates" title="Link to this heading"></a></h4>
+<p>The distributed lock mechanism is designed to prevent deadlocks in case of client failures:</p>
+<ol class="arabic simple">
+<li><p>When a lock is acquired, it has a specified timeout (in seconds) after which it’s automatically released</p></li>
+<li><p>Lock holders must periodically update the lock before the timeout expires to maintain ownership</p></li>
+<li><p>If a client crashes or becomes unresponsive, the lock will be automatically released after the timeout</p></li>
+<li><p>Other clients can acquire the lock after the timeout period expires</p></li>
+</ol>
+</section>
+<section id="thread-identification-and-reentrant-locks">
+<h4>Thread Identification and Reentrant Locks<a class="headerlink" href="#thread-identification-and-reentrant-locks" title="Link to this heading"></a></h4>
+<p>When working with locks, proper thread identification is essential:</p>
+<ol class="arabic simple">
+<li><p>Use unique identifiers (like thread ID or process ID) as the lock value</p></li>
+<li><p>The same thread/process can reacquire its own lock using the <cite>rlock</cite> method</p></li>
+<li><p>Different threads/processes cannot acquire a lock while it’s held by another</p></li>
+<li><p>In distributed systems, ensure each node uses a globally unique identifier</p></li>
+</ol>
+</section>
+<section id="redis-instance-requirements">
+<h4>Redis Instance Requirements<a class="headerlink" href="#redis-instance-requirements" title="Link to this heading"></a></h4>
+<p>Important considerations regarding Redis deployment:</p>
+<ol class="arabic simple">
+<li><p>RedisLock requires a single Redis instance (standalone or master in master-replica setup)</p></li>
+<li><p>It is not compatible with Redis Cluster, as cluster mode doesn’t guarantee atomicity</p></li>
+<li><p>For Redis Cluster environments, consider alternative solutions such as RedLock</p></li>
+</ol>
+</section>
+</section>
+<section id="using-redisallocator-for-resource-management">
+<h3>Using RedisAllocator for Resource Management<a class="headerlink" href="#using-redisallocator-for-resource-management" title="Link to this heading"></a></h3>
+<p>RedisAllocator manages a pool of resources that can be allocated, freed, and garbage collected:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">Redis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis_allocator</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisAllocator</span>
+
+<span class="c1"># Initialize Redis client</span>
+<span class="n">redis</span> <span class="o">=</span> <span class="n">Redis</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="s1">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">)</span>
+
+<span class="c1"># Create a RedisAllocator instance</span>
+<span class="n">allocator</span> <span class="o">=</span> <span class="n">RedisAllocator</span><span class="p">(</span>
+    <span class="n">redis</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;myapp&#39;</span><span class="p">,</span>
+    <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;allocator&#39;</span><span class="p">,</span>
+    <span class="n">shared</span><span class="o">=</span><span class="kc">False</span>  <span class="c1"># Whether resources can be shared</span>
+<span class="p">)</span>
+
+<span class="c1"># Add resources to the pool</span>
+<span class="n">allocator</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="s1">&#39;resource-1&#39;</span><span class="p">,</span> <span class="s1">&#39;resource-2&#39;</span><span class="p">,</span> <span class="s1">&#39;resource-3&#39;</span><span class="p">])</span>
+
+<span class="c1"># Allocate a resource key (returns only the key)</span>
+<span class="n">key</span> <span class="o">=</span> <span class="n">allocator</span><span class="o">.</span><span class="n">malloc_key</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">key</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Use the allocated resource</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Allocated resource: </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="c1"># Free the resource when done</span>
+        <span class="n">allocator</span><span class="o">.</span><span class="n">free_keys</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+<span class="c1"># Allocate a resource with object (returns a RedisAllocatorObject)</span>
+<span class="n">allocated_obj</span> <span class="o">=</span> <span class="n">allocator</span><span class="o">.</span><span class="n">malloc</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">allocated_obj</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># The key is available as a property</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Allocated resource: </span><span class="si">{</span><span class="n">allocated_obj</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Update the resource&#39;s lock timeout</span>
+        <span class="n">allocated_obj</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="c1"># Free the resource when done</span>
+        <span class="n">allocator</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="n">allocated_obj</span><span class="p">)</span>
+
+<span class="c1"># Using soft binding (associates a name with a resource)</span>
+<span class="n">allocator</span><span class="o">.</span><span class="n">update_soft_bind</span><span class="p">(</span><span class="s2">&quot;worker-1&quot;</span><span class="p">,</span> <span class="s2">&quot;resource-1&quot;</span><span class="p">)</span>
+<span class="c1"># Later...</span>
+<span class="n">allocator</span><span class="o">.</span><span class="n">unbind_soft_bind</span><span class="p">(</span><span class="s2">&quot;worker-1&quot;</span><span class="p">)</span>
+
+<span class="c1"># Garbage collection (reclaims unused resources)</span>
+<span class="n">allocator</span><span class="o">.</span><span class="n">gc</span><span class="p">(</span><span class="n">count</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>  <span class="c1"># Check 10 items for cleanup</span>
+</pre></div>
+</div>
+</section>
+<section id="using-redistaskqueue-for-distributed-task-processing">
+<h3>Using RedisTaskQueue for Distributed Task Processing<a class="headerlink" href="#using-redistaskqueue-for-distributed-task-processing" title="Link to this heading"></a></h3>
+<p>RedisTaskQueue enables distributed task processing across multiple workers:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">Redis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis_allocator</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisTaskQueue</span><span class="p">,</span> <span class="n">TaskExecutePolicy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+
+<span class="c1"># Initialize Redis client</span>
+<span class="n">redis</span> <span class="o">=</span> <span class="n">Redis</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="s1">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">)</span>
+
+<span class="c1"># Process tasks in a worker</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">process_task</span><span class="p">(</span><span class="n">task</span><span class="p">):</span>
+    <span class="c1"># Process the task (task is a RedisTask object)</span>
+    <span class="c1"># You can access task.id, task.name, task.params</span>
+    <span class="c1"># You can update progress with task.update(current, total)</span>
+    <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">&quot;result&quot;</span><span class="p">:</span> <span class="s2">&quot;processed&quot;</span><span class="p">})</span>
+
+<span class="c1"># Create a task queue</span>
+<span class="n">task_queue</span> <span class="o">=</span> <span class="n">RedisTaskQueue</span><span class="p">(</span><span class="n">redis</span><span class="p">,</span> <span class="s2">&quot;myapp&quot;</span><span class="p">,</span> <span class="n">task_fn</span><span class="o">=</span><span class="n">process_task</span><span class="p">)</span>
+
+<span class="c1"># Submit a task with query method</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">task_queue</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+    <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;task-123&quot;</span><span class="p">,</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;example-task&quot;</span><span class="p">,</span>
+    <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;input&quot;</span><span class="p">:</span> <span class="s2">&quot;data&quot;</span><span class="p">},</span>
+    <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>  <span class="c1"># Optional timeout in seconds</span>
+    <span class="n">policy</span><span class="o">=</span><span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">Auto</span><span class="p">,</span>  <span class="c1"># Execution policy</span>
+    <span class="n">once</span><span class="o">=</span><span class="kc">False</span>  <span class="c1"># Whether to delete the result after getting it</span>
+<span class="p">)</span>
+
+<span class="c1"># Start listening for tasks</span>
+<span class="n">task_queue</span><span class="o">.</span><span class="n">listen</span><span class="p">(</span>
+    <span class="n">names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;example-task&quot;</span><span class="p">],</span>  <span class="c1"># List of task names to listen for</span>
+    <span class="n">workers</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>  <span class="c1"># Number of worker threads</span>
+    <span class="n">event</span><span class="o">=</span><span class="kc">None</span>  <span class="c1"># Optional event to signal when to stop listening</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="advanced-usage">
+<h2>Advanced Usage<a class="headerlink" href="#advanced-usage" title="Link to this heading"></a></h2>
+<p>For more advanced usage examples and the complete API reference, please refer to the <a class="reference internal" href="api/index.html"><span class="doc">API Reference</span></a>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="examples/proxy_pool.html" class="btn btn-neutral float-right" title="Example: Managing a Proxy Pool with Automatic Updates" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2025, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

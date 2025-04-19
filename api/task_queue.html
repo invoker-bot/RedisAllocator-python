@@ -1,0 +1,1319 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Queue Module &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+      <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+      <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+      <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Changelog" href="../changelog.html" />
+    <link rel="prev" title="Allocator Module" href="allocator.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="lock.html">Lock Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="allocator.html">Allocator Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="allocator.html#module-0">Allocator</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Task Queue Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#redistaskqueue">RedisTaskQueue</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.RedisTaskQueue"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#redistask">RedisTask</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.RedisTask"><code class="docutils literal notranslate"><span class="pre">RedisTask</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#taskexecutepolicy">TaskExecutePolicy</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#module-0">Task Queue</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy.Local"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.Local</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy.Remote"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.Remote</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy.LocalFirst"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.LocalFirst</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy.RemoteFirst"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.RemoteFirst</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy.Auto"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.Auto</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id9"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.Local</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id10"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.Remote</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id11"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.LocalFirst</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id12"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.RemoteFirst</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id13"><code class="docutils literal notranslate"><span class="pre">TaskExecutePolicy.Auto</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#id14"><code class="docutils literal notranslate"><span class="pre">RedisTask</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id15"><code class="docutils literal notranslate"><span class="pre">RedisTask.id</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id16"><code class="docutils literal notranslate"><span class="pre">RedisTask.name</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id17"><code class="docutils literal notranslate"><span class="pre">RedisTask.params</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id18"><code class="docutils literal notranslate"><span class="pre">RedisTask.expiry</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id19"><code class="docutils literal notranslate"><span class="pre">RedisTask.result</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id20"><code class="docutils literal notranslate"><span class="pre">RedisTask.error</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id21"><code class="docutils literal notranslate"><span class="pre">RedisTask.update_progress_time</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id22"><code class="docutils literal notranslate"><span class="pre">RedisTask.current_progress</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id23"><code class="docutils literal notranslate"><span class="pre">RedisTask.total_progress</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id24"><code class="docutils literal notranslate"><span class="pre">RedisTask._save</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id25"><code class="docutils literal notranslate"><span class="pre">RedisTask.id</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id26"><code class="docutils literal notranslate"><span class="pre">RedisTask.name</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id27"><code class="docutils literal notranslate"><span class="pre">RedisTask.params</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id28"><code class="docutils literal notranslate"><span class="pre">RedisTask.expiry</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id29"><code class="docutils literal notranslate"><span class="pre">RedisTask.result</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id30"><code class="docutils literal notranslate"><span class="pre">RedisTask.error</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id31"><code class="docutils literal notranslate"><span class="pre">RedisTask.update_progress_time</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id32"><code class="docutils literal notranslate"><span class="pre">RedisTask.current_progress</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id33"><code class="docutils literal notranslate"><span class="pre">RedisTask.total_progress</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id34"><code class="docutils literal notranslate"><span class="pre">RedisTask.save()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id35"><code class="docutils literal notranslate"><span class="pre">RedisTask.update()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id36"><code class="docutils literal notranslate"><span class="pre">RedisTask.__init__()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#id37"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id38"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.redis</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id39"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.prefix</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id40"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.suffix</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id41"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.timeout</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id42"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.interval</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id43"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.task_fn</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id44"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.__init__()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id45"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.build_task()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id46"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.execute_task_remotely()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id47"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.execute_task_locally()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id48"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.set_queue_listened()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id49"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.set_task()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id50"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.get_task()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id51"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.has_task()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id52"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.listen()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id53"><code class="docutils literal notranslate"><span class="pre">RedisTaskQueue.query()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#simplified-task-queue-flow">Simplified Task Queue Flow</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Task Queue Module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/task_queue.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="task-queue-module">
+<h1>Task Queue Module<a class="headerlink" href="#task-queue-module" title="Link to this heading"></a></h1>
+<p id="module-redis_allocator.task_queue">This module provides a task queue system for distributed task processing using Redis as the backend.</p>
+<section id="redistaskqueue">
+<h2>RedisTaskQueue<a class="headerlink" href="#redistaskqueue" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.task_queue.</span></span><span class="sig-name descname"><span class="pre">RedisTaskQueue</span></span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue" title="Link to this definition"></a></dt>
+<dd><p>Provides a distributed task queue using Redis lists and key/value storage.</p>
+<p>Enables submitting tasks (represented by <cite>RedisTask</cite> objects) to named queues
+and having them processed either locally (if <cite>task_fn</cite> is provided) or by
+remote listeners polling the corresponding Redis list.</p>
+<p>Key Concepts:
+- Task Queues: Redis lists (<cite>&lt;prefix&gt;|&lt;suffix&gt;|task-queue|&lt;name&gt;</cite>) where task IDs</p>
+<blockquote>
+<div><p>are pushed for remote workers.</p>
+</div></blockquote>
+<ul class="simple">
+<li><dl class="simple">
+<dt>Task Data: Serialized <cite>RedisTask</cite> objects stored in Redis keys</dt><dd><p>(<cite>&lt;prefix&gt;|&lt;suffix&gt;|task-result:&lt;id&gt;</cite>) with an expiry time.
+This stores parameters, progress, results, and errors.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Listeners: Remote workers use BLPOP on queue lists. To signal their presence,</dt><dd><p>they periodically set a listener key (<cite>&lt;prefix&gt;|&lt;suffix&gt;|task-listen|&lt;name&gt;</cite>).</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Execution Policies (<cite>TaskExecutePolicy</cite>): Control whether a task is executed</dt><dd><p>locally, remotely, or attempts one then the other.
+<cite>Auto</cite> mode checks for a listener key.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Task Function (<cite>task_fn</cite>): A user-provided function that takes a <cite>RedisTask</cite></dt><dd><p>and performs the actual work locally.</p>
+</dd>
+</dl>
+</li>
+</ul>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.redis">
+<span class="sig-name descname"><span class="pre">redis</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.redis" title="Link to this definition"></a></dt>
+<dd><p>StrictRedis client instance.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.prefix">
+<span class="sig-name descname"><span class="pre">prefix</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.prefix" title="Link to this definition"></a></dt>
+<dd><p>Prefix for all Redis keys.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.suffix">
+<span class="sig-name descname"><span class="pre">suffix</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.suffix" title="Link to this definition"></a></dt>
+<dd><p>Suffix for Redis keys (default: ‘task-queue’).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.timeout">
+<span class="sig-name descname"><span class="pre">timeout</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.timeout" title="Link to this definition"></a></dt>
+<dd><p>Default expiry/timeout for tasks and listener keys (seconds).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.interval">
+<span class="sig-name descname"><span class="pre">interval</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.interval" title="Link to this definition"></a></dt>
+<dd><p>Polling interval for remote task fetching (seconds).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.task_fn">
+<span class="sig-name descname"><span class="pre">task_fn</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.task_fn" title="Link to this definition"></a></dt>
+<dd><p>Callable[[RedisTask], Any] to execute tasks locally.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">redis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'task-queue'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_fn</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize a RedisTaskQueue instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>redis</strong> (<a class="reference external" href="https://redis-py.readthedocs.io/en/stable/connections.html#redis.Redis" title="(in redis-py v99.99.99)"><em>Redis</em></a>) – The Redis client used for interacting with Redis.</p></li>
+<li><p><strong>prefix</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The prefix to be added to the task queue key.</p></li>
+<li><p><strong>suffix</strong> – The suffix to be added to the task queue key. Default is ‘task-queue’.</p></li>
+<li><p><strong>timeout</strong> – The query timeout in seconds. Default is 300s.</p></li>
+<li><p><strong>interval</strong> – The query interval in seconds. Default is 5s.</p></li>
+<li><p><strong>task_fn</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em>] </em><em>| </em><em>None</em>) – A function to execute tasks locally. Takes a RedisTask and returns Any.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.build_task">
+<span class="sig-name descname"><span class="pre">build_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.build_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.build_task" title="Link to this definition"></a></dt>
+<dd><p>Create a new RedisTask instance with the given parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Unique identifier for the task</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Name of the task category</p></li>
+<li><p><strong>params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – Dictionary of parameters for the task</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new RedisTask instance with a save function configured</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.execute_task_remotely">
+<span class="sig-name descname"><span class="pre">execute_task_remotely</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.execute_task_remotely"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.execute_task_remotely" title="Link to this definition"></a></dt>
+<dd><p>Execute a task remotely by pushing it to the queue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> (<a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a>) – The RedisTask to execute</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>) – Optional timeout in seconds, defaults to self.timeout</p></li>
+<li><p><strong>once</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to delete the result after getting it</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The result of the task</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#TimeoutError" title="(in Python v3.13)"><strong>TimeoutError</strong></a> – If the task times out</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.13)"><strong>Exception</strong></a> – Any exception raised during task execution</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.execute_task_locally">
+<span class="sig-name descname"><span class="pre">execute_task_locally</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.execute_task_locally"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.execute_task_locally" title="Link to this definition"></a></dt>
+<dd><p>Execute a task locally using the task_fn.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> (<a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a>) – The RedisTask to execute</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>) – Optional timeout in seconds, updates task.expiry if provided</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The result of the task</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.13)"><strong>Exception</strong></a> – Any exception raised during task execution</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.set_queue_listened">
+<span class="sig-name descname"><span class="pre">set_queue_listened</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.set_queue_listened"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.set_queue_listened" title="Link to this definition"></a></dt>
+<dd><p>Set the queue as being listened to for the given task name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task name.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.set_task">
+<span class="sig-name descname"><span class="pre">set_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.set_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.set_task" title="Link to this definition"></a></dt>
+<dd><p>Save a task to Redis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>task</strong> (<a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a>) – The RedisTask to save.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The task ID.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.get_task">
+<span class="sig-name descname"><span class="pre">get_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.get_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.get_task" title="Link to this definition"></a></dt>
+<dd><p>Get a task from Redis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task ID.</p></li>
+<li><p><strong>once</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to delete the task after getting it.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The RedisTask, or None if no task is available.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.has_task">
+<span class="sig-name descname"><span class="pre">has_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.has_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.has_task" title="Link to this definition"></a></dt>
+<dd><p>Check if a task exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>task_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task ID.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the task exists, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.listen">
+<span class="sig-name descname"><span class="pre">listen</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.listen"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.listen" title="Link to this definition"></a></dt>
+<dd><p>Listen for tasks on the specified queues.</p>
+<p>This method continuously polls the specified queues for tasks,
+and executes tasks locally when they are received.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>names</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><em>List</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>]</em>) – The names of the queues to listen to.</p></li>
+<li><p><strong>workers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – The number of worker threads to use. Default is 128.</p></li>
+<li><p><strong>event</strong> (<a class="reference external" href="https://docs.python.org/3/library/threading.html#threading.Event" title="(in Python v3.13)"><em>Event</em></a><em> | </em><em>None</em>) – An event to signal when to stop listening. Default is None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTaskQueue.query">
+<span class="sig-name descname"><span class="pre">query</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">policy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TaskExecutePolicy.Auto</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.query"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTaskQueue.query" title="Link to this definition"></a></dt>
+<dd><p>Execute a task according to the specified policy.</p>
+<p>This method provides a flexible way to execute tasks with different
+strategies based on the specified policy.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task ID.</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task name.</p></li>
+<li><p><strong>params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – The task parameters.</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>) – Optional timeout override.</p></li>
+<li><p><strong>policy</strong> (<a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy" title="redis_allocator.task_queue.TaskExecutePolicy"><em>TaskExecutePolicy</em></a>) – The execution policy to use.</p></li>
+<li><p><strong>once</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to delete the result after getting it.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The result of the task.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.13)"><strong>Exception</strong></a> – Any exception raised during task execution.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="redistask">
+<h2>RedisTask<a class="headerlink" href="#redistask" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.task_queue.</span></span><span class="sig-name descname"><span class="pre">RedisTask</span></span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTask" title="Link to this definition"></a></dt>
+<dd><p>Represents a task to be processed via the RedisTaskQueue.</p>
+<p>Encapsulates task details like ID, category (name), parameters, and its current state
+(progress, result, error). It includes methods for saving state and updating progress.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.id">
+<span class="sig-name descname"><span class="pre">id</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.id" title="Link to this definition"></a></dt>
+<dd><p>Unique identifier for this specific task instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.name">
+<span class="sig-name descname"><span class="pre">name</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.name" title="Link to this definition"></a></dt>
+<dd><p>Categorical name for the task (used for routing in the queue).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.params">
+<span class="sig-name descname"><span class="pre">params</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.params" title="Link to this definition"></a></dt>
+<dd><p>Dictionary containing task-specific input parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.expiry">
+<span class="sig-name descname"><span class="pre">expiry</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.expiry" title="Link to this definition"></a></dt>
+<dd><p>Absolute Unix timestamp when the task should be considered expired.
+Used both locally and remotely to timeout waiting operations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.result">
+<span class="sig-name descname"><span class="pre">result</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.result" title="Link to this definition"></a></dt>
+<dd><p>Stores the successful return value of the task execution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.error">
+<span class="sig-name descname"><span class="pre">error</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.error" title="Link to this definition"></a></dt>
+<dd><p>Stores any exception raised during task execution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.update_progress_time">
+<span class="sig-name descname"><span class="pre">update_progress_time</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.update_progress_time" title="Link to this definition"></a></dt>
+<dd><p>Timestamp of the last progress update.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.current_progress">
+<span class="sig-name descname"><span class="pre">current_progress</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.current_progress" title="Link to this definition"></a></dt>
+<dd><p>Current progress value (e.g., items processed).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.total_progress">
+<span class="sig-name descname"><span class="pre">total_progress</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.total_progress" title="Link to this definition"></a></dt>
+<dd><p>Total expected value for completion (e.g., total items).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask._save">
+<span class="sig-name descname"><span class="pre">_save</span></span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask._save" title="Link to this definition"></a></dt>
+<dd><p>Internal callback function provided by RedisTaskQueue to persist
+the task’s state (result, error, progress) back to Redis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Callable[[], None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id0">
+<span class="sig-name descname"><span class="pre">id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></em><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id1">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></em><a class="headerlink" href="#id1" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id2">
+<span class="sig-name descname"><span class="pre">params</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a></em><a class="headerlink" href="#id2" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id3">
+<span class="sig-name descname"><span class="pre">expiry</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><a class="headerlink" href="#id3" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id4">
+<span class="sig-name descname"><span class="pre">result</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id4" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id5">
+<span class="sig-name descname"><span class="pre">error</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id5" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id6">
+<span class="sig-name descname"><span class="pre">update_progress_time</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#id6" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id7">
+<span class="sig-name descname"><span class="pre">current_progress</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#id7" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id8">
+<span class="sig-name descname"><span class="pre">total_progress</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">100.0</span></em><a class="headerlink" href="#id8" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTask.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.save" title="Link to this definition"></a></dt>
+<dd><p>Save the current state of the task to Redis.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_progress</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_progress</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTask.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.update" title="Link to this definition"></a></dt>
+<dd><p>Update the progress of the task.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>current_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – The current progress value</p></li>
+<li><p><strong>total_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – The total progress value for completion</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#TimeoutError" title="(in Python v3.13)"><strong>TimeoutError</strong></a> – If the task has expired</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.RedisTask.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expiry</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">error</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">update_progress_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#redis_allocator.task_queue.RedisTask.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+<li><p><strong>params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>)</p></li>
+<li><p><strong>expiry</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>result</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>error</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>update_progress_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>current_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>total_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>_save</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><em>]</em><em>, </em><em>None</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="taskexecutepolicy">
+<h2>TaskExecutePolicy<a class="headerlink" href="#taskexecutepolicy" title="Link to this heading"></a></h2>
+</section>
+</section>
+<section id="module-0">
+<span id="task-queue"></span><h1>Task Queue<a class="headerlink" href="#module-0" title="Link to this heading"></a></h1>
+<p>Redis-based task queue system for distributed task management.</p>
+<p>This module provides a RedisTaskQueue class that enables distributed task
+management and coordination using Redis as the underlying infrastructure.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.TaskExecutePolicy">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.task_queue.</span></span><span class="sig-name descname"><span class="pre">TaskExecutePolicy</span></span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#TaskExecutePolicy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.task_queue.TaskExecutePolicy" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/enum.html#enum.Enum" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Enum</span></code></a></p>
+<p>Defines different policies for task execution.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.TaskExecutePolicy.Local">
+<span class="sig-name descname"><span class="pre">Local</span></span><a class="headerlink" href="#redis_allocator.task_queue.TaskExecutePolicy.Local" title="Link to this definition"></a></dt>
+<dd><p>Execute task only locally</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.TaskExecutePolicy.Remote">
+<span class="sig-name descname"><span class="pre">Remote</span></span><a class="headerlink" href="#redis_allocator.task_queue.TaskExecutePolicy.Remote" title="Link to this definition"></a></dt>
+<dd><p>Execute task only remotely</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.TaskExecutePolicy.LocalFirst">
+<span class="sig-name descname"><span class="pre">LocalFirst</span></span><a class="headerlink" href="#redis_allocator.task_queue.TaskExecutePolicy.LocalFirst" title="Link to this definition"></a></dt>
+<dd><p>Try to execute locally first, then remotely if it fails</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.TaskExecutePolicy.RemoteFirst">
+<span class="sig-name descname"><span class="pre">RemoteFirst</span></span><a class="headerlink" href="#redis_allocator.task_queue.TaskExecutePolicy.RemoteFirst" title="Link to this definition"></a></dt>
+<dd><p>Try to execute remotely first, then locally if it fails</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.task_queue.TaskExecutePolicy.Auto">
+<span class="sig-name descname"><span class="pre">Auto</span></span><a class="headerlink" href="#redis_allocator.task_queue.TaskExecutePolicy.Auto" title="Link to this definition"></a></dt>
+<dd><p>Choose execution mode based on whether a remote listener exists</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id9">
+<span class="sig-name descname"><span class="pre">Local</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#id9" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id10">
+<span class="sig-name descname"><span class="pre">Remote</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></em><a class="headerlink" href="#id10" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id11">
+<span class="sig-name descname"><span class="pre">LocalFirst</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2</span></em><a class="headerlink" href="#id11" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id12">
+<span class="sig-name descname"><span class="pre">RemoteFirst</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">3</span></em><a class="headerlink" href="#id12" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id13">
+<span class="sig-name descname"><span class="pre">Auto</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">4</span></em><a class="headerlink" href="#id13" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="id14">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.task_queue.</span></span><span class="sig-name descname"><span class="pre">RedisTask</span></span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id14" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Represents a task to be processed via the RedisTaskQueue.</p>
+<p>Encapsulates task details like ID, category (name), parameters, and its current state
+(progress, result, error). It includes methods for saving state and updating progress.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id15">
+<span class="sig-name descname"><span class="pre">id</span></span><a class="headerlink" href="#id15" title="Link to this definition"></a></dt>
+<dd><p>Unique identifier for this specific task instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id16">
+<span class="sig-name descname"><span class="pre">name</span></span><a class="headerlink" href="#id16" title="Link to this definition"></a></dt>
+<dd><p>Categorical name for the task (used for routing in the queue).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id17">
+<span class="sig-name descname"><span class="pre">params</span></span><a class="headerlink" href="#id17" title="Link to this definition"></a></dt>
+<dd><p>Dictionary containing task-specific input parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id18">
+<span class="sig-name descname"><span class="pre">expiry</span></span><a class="headerlink" href="#id18" title="Link to this definition"></a></dt>
+<dd><p>Absolute Unix timestamp when the task should be considered expired.
+Used both locally and remotely to timeout waiting operations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id19">
+<span class="sig-name descname"><span class="pre">result</span></span><a class="headerlink" href="#id19" title="Link to this definition"></a></dt>
+<dd><p>Stores the successful return value of the task execution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id20">
+<span class="sig-name descname"><span class="pre">error</span></span><a class="headerlink" href="#id20" title="Link to this definition"></a></dt>
+<dd><p>Stores any exception raised during task execution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Any</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id21">
+<span class="sig-name descname"><span class="pre">update_progress_time</span></span><a class="headerlink" href="#id21" title="Link to this definition"></a></dt>
+<dd><p>Timestamp of the last progress update.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id22">
+<span class="sig-name descname"><span class="pre">current_progress</span></span><a class="headerlink" href="#id22" title="Link to this definition"></a></dt>
+<dd><p>Current progress value (e.g., items processed).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id23">
+<span class="sig-name descname"><span class="pre">total_progress</span></span><a class="headerlink" href="#id23" title="Link to this definition"></a></dt>
+<dd><p>Total expected value for completion (e.g., total items).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id24">
+<span class="sig-name descname"><span class="pre">_save</span></span><a class="headerlink" href="#id24" title="Link to this definition"></a></dt>
+<dd><p>Internal callback function provided by RedisTaskQueue to persist
+the task’s state (result, error, progress) back to Redis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Callable[[], None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id25">
+<span class="sig-name descname"><span class="pre">id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></em><a class="headerlink" href="#id25" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id26">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></em><a class="headerlink" href="#id26" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id27">
+<span class="sig-name descname"><span class="pre">params</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a></em><a class="headerlink" href="#id27" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id28">
+<span class="sig-name descname"><span class="pre">expiry</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><a class="headerlink" href="#id28" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id29">
+<span class="sig-name descname"><span class="pre">result</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id29" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id30">
+<span class="sig-name descname"><span class="pre">error</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id30" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id31">
+<span class="sig-name descname"><span class="pre">update_progress_time</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#id31" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id32">
+<span class="sig-name descname"><span class="pre">current_progress</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#id32" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id33">
+<span class="sig-name descname"><span class="pre">total_progress</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">100.0</span></em><a class="headerlink" href="#id33" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id34">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTask.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id34" title="Link to this definition"></a></dt>
+<dd><p>Save the current state of the task to Redis.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id35">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_progress</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_progress</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTask.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id35" title="Link to this definition"></a></dt>
+<dd><p>Update the progress of the task.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>current_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – The current progress value</p></li>
+<li><p><strong>total_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – The total progress value for completion</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#TimeoutError" title="(in Python v3.13)"><strong>TimeoutError</strong></a> – If the task has expired</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id36">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expiry</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">error</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">update_progress_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id36" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+<li><p><strong>params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>)</p></li>
+<li><p><strong>expiry</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>result</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>error</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>update_progress_time</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>current_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>total_progress</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>_save</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><em>]</em><em>, </em><em>None</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="id37">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.task_queue.</span></span><span class="sig-name descname"><span class="pre">RedisTaskQueue</span></span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id37" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Provides a distributed task queue using Redis lists and key/value storage.</p>
+<p>Enables submitting tasks (represented by <cite>RedisTask</cite> objects) to named queues
+and having them processed either locally (if <cite>task_fn</cite> is provided) or by
+remote listeners polling the corresponding Redis list.</p>
+<p>Key Concepts:
+- Task Queues: Redis lists (<cite>&lt;prefix&gt;|&lt;suffix&gt;|task-queue|&lt;name&gt;</cite>) where task IDs</p>
+<blockquote>
+<div><p>are pushed for remote workers.</p>
+</div></blockquote>
+<ul class="simple">
+<li><dl class="simple">
+<dt>Task Data: Serialized <cite>RedisTask</cite> objects stored in Redis keys</dt><dd><p>(<cite>&lt;prefix&gt;|&lt;suffix&gt;|task-result:&lt;id&gt;</cite>) with an expiry time.
+This stores parameters, progress, results, and errors.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Listeners: Remote workers use BLPOP on queue lists. To signal their presence,</dt><dd><p>they periodically set a listener key (<cite>&lt;prefix&gt;|&lt;suffix&gt;|task-listen|&lt;name&gt;</cite>).</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Execution Policies (<cite>TaskExecutePolicy</cite>): Control whether a task is executed</dt><dd><p>locally, remotely, or attempts one then the other.
+<cite>Auto</cite> mode checks for a listener key.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Task Function (<cite>task_fn</cite>): A user-provided function that takes a <cite>RedisTask</cite></dt><dd><p>and performs the actual work locally.</p>
+</dd>
+</dl>
+</li>
+</ul>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id38">
+<span class="sig-name descname"><span class="pre">redis</span></span><a class="headerlink" href="#id38" title="Link to this definition"></a></dt>
+<dd><p>StrictRedis client instance.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id39">
+<span class="sig-name descname"><span class="pre">prefix</span></span><a class="headerlink" href="#id39" title="Link to this definition"></a></dt>
+<dd><p>Prefix for all Redis keys.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id40">
+<span class="sig-name descname"><span class="pre">suffix</span></span><a class="headerlink" href="#id40" title="Link to this definition"></a></dt>
+<dd><p>Suffix for Redis keys (default: ‘task-queue’).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id41">
+<span class="sig-name descname"><span class="pre">timeout</span></span><a class="headerlink" href="#id41" title="Link to this definition"></a></dt>
+<dd><p>Default expiry/timeout for tasks and listener keys (seconds).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id42">
+<span class="sig-name descname"><span class="pre">interval</span></span><a class="headerlink" href="#id42" title="Link to this definition"></a></dt>
+<dd><p>Polling interval for remote task fetching (seconds).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id43">
+<span class="sig-name descname"><span class="pre">task_fn</span></span><a class="headerlink" href="#id43" title="Link to this definition"></a></dt>
+<dd><p>Callable[[RedisTask], Any] to execute tasks locally.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id44">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">redis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'task-queue'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_fn</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id44" title="Link to this definition"></a></dt>
+<dd><p>Initialize a RedisTaskQueue instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>redis</strong> (<a class="reference external" href="https://redis-py.readthedocs.io/en/stable/connections.html#redis.Redis" title="(in redis-py v99.99.99)"><em>Redis</em></a>) – The Redis client used for interacting with Redis.</p></li>
+<li><p><strong>prefix</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The prefix to be added to the task queue key.</p></li>
+<li><p><strong>suffix</strong> – The suffix to be added to the task queue key. Default is ‘task-queue’.</p></li>
+<li><p><strong>timeout</strong> – The query timeout in seconds. Default is 300s.</p></li>
+<li><p><strong>interval</strong> – The query interval in seconds. Default is 5s.</p></li>
+<li><p><strong>task_fn</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em>] </em><em>| </em><em>None</em>) – A function to execute tasks locally. Takes a RedisTask and returns Any.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id45">
+<span class="sig-name descname"><span class="pre">build_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.build_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id45" title="Link to this definition"></a></dt>
+<dd><p>Create a new RedisTask instance with the given parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Unique identifier for the task</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Name of the task category</p></li>
+<li><p><strong>params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – Dictionary of parameters for the task</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new RedisTask instance with a save function configured</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id46">
+<span class="sig-name descname"><span class="pre">execute_task_remotely</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.execute_task_remotely"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id46" title="Link to this definition"></a></dt>
+<dd><p>Execute a task remotely by pushing it to the queue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> (<a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a>) – The RedisTask to execute</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>) – Optional timeout in seconds, defaults to self.timeout</p></li>
+<li><p><strong>once</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to delete the result after getting it</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The result of the task</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#TimeoutError" title="(in Python v3.13)"><strong>TimeoutError</strong></a> – If the task times out</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.13)"><strong>Exception</strong></a> – Any exception raised during task execution</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id47">
+<span class="sig-name descname"><span class="pre">execute_task_locally</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.execute_task_locally"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id47" title="Link to this definition"></a></dt>
+<dd><p>Execute a task locally using the task_fn.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task</strong> (<a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a>) – The RedisTask to execute</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>) – Optional timeout in seconds, updates task.expiry if provided</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The result of the task</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.13)"><strong>Exception</strong></a> – Any exception raised during task execution</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id48">
+<span class="sig-name descname"><span class="pre">set_queue_listened</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.set_queue_listened"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id48" title="Link to this definition"></a></dt>
+<dd><p>Set the queue as being listened to for the given task name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task name.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id49">
+<span class="sig-name descname"><span class="pre">set_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.set_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id49" title="Link to this definition"></a></dt>
+<dd><p>Save a task to Redis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>task</strong> (<a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a>) – The RedisTask to save.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The task ID.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id50">
+<span class="sig-name descname"><span class="pre">get_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.get_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id50" title="Link to this definition"></a></dt>
+<dd><p>Get a task from Redis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>task_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task ID.</p></li>
+<li><p><strong>once</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to delete the task after getting it.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The RedisTask, or None if no task is available.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#id14" title="redis_allocator.task_queue.RedisTask"><em>RedisTask</em></a> | None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id51">
+<span class="sig-name descname"><span class="pre">has_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">task_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.has_task"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id51" title="Link to this definition"></a></dt>
+<dd><p>Check if a task exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>task_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task ID.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the task exists, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id52">
+<span class="sig-name descname"><span class="pre">listen</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.listen"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id52" title="Link to this definition"></a></dt>
+<dd><p>Listen for tasks on the specified queues.</p>
+<p>This method continuously polls the specified queues for tasks,
+and executes tasks locally when they are received.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>names</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><em>List</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>]</em>) – The names of the queues to listen to.</p></li>
+<li><p><strong>workers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – The number of worker threads to use. Default is 128.</p></li>
+<li><p><strong>event</strong> (<a class="reference external" href="https://docs.python.org/3/library/threading.html#threading.Event" title="(in Python v3.13)"><em>Event</em></a><em> | </em><em>None</em>) – An event to signal when to stop listening. Default is None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id53">
+<span class="sig-name descname"><span class="pre">query</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">policy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TaskExecutePolicy.Auto</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">once</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/task_queue.html#RedisTaskQueue.query"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id53" title="Link to this definition"></a></dt>
+<dd><p>Execute a task according to the specified policy.</p>
+<p>This method provides a flexible way to execute tasks with different
+strategies based on the specified policy.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task ID.</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The task name.</p></li>
+<li><p><strong>params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – The task parameters.</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>) – Optional timeout override.</p></li>
+<li><p><strong>policy</strong> (<a class="reference internal" href="#redis_allocator.task_queue.TaskExecutePolicy" title="redis_allocator.task_queue.TaskExecutePolicy"><em>TaskExecutePolicy</em></a>) – The execution policy to use.</p></li>
+<li><p><strong>once</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to delete the result after getting it.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The result of the task.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.13)"><strong>Exception</strong></a> – Any exception raised during task execution.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<section id="simplified-task-queue-flow">
+<h2>Simplified Task Queue Flow<a class="headerlink" href="#simplified-task-queue-flow" title="Link to this heading"></a></h2>
+<p>This diagram shows the interaction between a Client submitting a task, the <cite>RedisTaskQueue</cite>,
+Redis itself, and a <cite>Listener</cite> processing the task.</p>
+<ol class="arabic simple">
+<li><p><strong>Submission</strong>: The client calls <cite>query()</cite>. The <cite>RedisTaskQueue</cite> serializes the task data
+and stores it in a Redis key (<cite>result:&lt;id&gt;</cite>) with an expiry. It then pushes the task ID
+onto the corresponding queue list (<cite>queue:&lt;name&gt;</cite>).</p></li>
+<li><p><strong>Listening</strong>: A listener calls <cite>listen()</cite> and performs a blocking pop (<cite>BLPOP</cite>) on the queue list.</p></li>
+<li><p><strong>Processing</strong>: When a task ID is popped, the listener retrieves the task data from Redis,
+executes the user-defined <cite>task_fn</cite>, and updates the task data in Redis with the result or error.</p></li>
+<li><p><strong>Result Retrieval</strong>: The original client can periodically call <cite>get_task()</cite> to fetch the updated
+task data and retrieve the result or error.</p></li>
+</ol>
+<pre  class="mermaid">
+        sequenceDiagram
+    participant Client
+    participant TaskQueue
+    participant Redis
+    participant Listener
+
+    Client-&gt;&gt;TaskQueue: query(id, name, params)
+    note right of Redis: Stores task state: SETEX result:&lt;id&gt; pickled_task
+    TaskQueue-&gt;&gt;Redis: SETEX result:&lt;id&gt; pickled_task
+    note right of Redis: Adds ID to queue: RPUSH queue:&lt;name&gt; &lt;id&gt;
+    TaskQueue-&gt;&gt;Redis: RPUSH queue:&lt;name&gt; &lt;id&gt;
+    Redis--&gt;&gt;TaskQueue: OK
+    TaskQueue--&gt;&gt;Client: (Waits or returns if local)
+
+    Listener-&gt;&gt;TaskQueue: listen([name])
+    loop Poll Queue
+        note over TaskQueue,Redis: BLPOP queue:&lt;name&gt; timeout
+        TaskQueue-&gt;&gt;Redis: BLPOP queue:&lt;name&gt; timeout
+        alt Task Available
+            Redis--&gt;&gt;TaskQueue: [queue:&lt;name&gt;, &lt;id&gt;]
+            note over TaskQueue,Redis: GET result:&lt;id&gt;
+            TaskQueue-&gt;&gt;Redis: GET result:&lt;id&gt;
+            Redis--&gt;&gt;TaskQueue: pickled_task
+            TaskQueue-&gt;&gt;Listener: Execute task_fn(task)
+            Listener--&gt;&gt;TaskQueue: result/error
+            note right of Redis: Updates task state: SETEX result:&lt;id&gt; updated_pickled_task
+            TaskQueue-&gt;&gt;Redis: SETEX result:&lt;id&gt; updated_pickled_task
+        else Timeout
+            Redis--&gt;&gt;TaskQueue: nil
+        end
+    end
+
+    Client-&gt;&gt;TaskQueue: get_task(id) (Periodically or when notified)
+    note over TaskQueue,Redis: GET result:&lt;id&gt;
+    TaskQueue-&gt;&gt;Redis: GET result:&lt;id&gt;
+    Redis--&gt;&gt;TaskQueue: updated_pickled_task
+    TaskQueue--&gt;&gt;Client: Task result/error
+    </pre></section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="allocator.html" class="btn btn-neutral float-left" title="Allocator Module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../changelog.html" class="btn btn-neutral float-right" title="Changelog" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2025, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
