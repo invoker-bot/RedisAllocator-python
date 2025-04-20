@@ -9,6 +9,7 @@ This module tests the functionality of:
 import time
 import datetime
 import threading
+# from itertools import cycle
 from operator import xor
 from pytest_mock import MockFixture
 from redis import Redis
@@ -277,6 +278,7 @@ class TestRedisAllocator:
             assert not redis_allocator.is_locked(key)
             assert not redis_client.exists(redis_allocator._key_str(key))
 
+        # print(self.get_redis_pool_state(redis_allocator, redis_client))
         allocated_key = redis_allocator.malloc_key(timeout=30)
         assert allocated_key == "key1"
         assert xor(shared, redis_allocator.is_locked(allocated_key))
@@ -427,7 +429,11 @@ class TestRedisAllocator:
             )
             time.tick(600)
             allocator_with_policy.gc()
+            print(self.get_redis_pool_state(allocator_with_policy, redis_client))
+            redis_client.register_script("print('-------------------------------')")()
             allocator_with_policy.gc()  # some times should be called twice to remove the expired items
+            redis_client.register_script("print('-------------------------------')")()
+            print(self.get_redis_pool_state(allocator_with_policy, redis_client))
             allocator_with_policy.policy.refresh_pool(allocator_with_policy)
             assert len(allocator_with_policy) == 4
             allocator_with_policy.gc()
@@ -491,3 +497,20 @@ class TestRedisAllocator:
                 else:
                     state = ['key1', 'key2'], ['key3']
             assert self.get_redis_pool_state(redis_allocator, redis_client) == self.generate_pool_state(redis_client, *state)
+
+
+    # def test_allocator_health_check(self, redis_allocator: RedisAllocator, mocker: MockFixture):
+    #     ''''''
+    #     with freeze_time("2024-01-01") as time:
+    #         for i in range(100):
+    #             obj = _TestObject(name = f"test_object_{i}")
+    #             mocker.patch.object(obj, 'is_healthy', side_effect = cycle([True, False]))
+    #             
+    #             redis_allocator.malloc(obj = obj, timeout = 30)
+    #             time.tick(30)
+    #             redis_allocator.gc()
+    #             unh, h = redis_allocator.health_check()
+    #             assert len(redis_allocator.get_free_list()) == h
+    #         # time.tick(100)
+    #         # redis_allocator.gc()
+    #         # assert not redis_allocator.is_locked("key1")

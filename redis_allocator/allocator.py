@@ -632,23 +632,51 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local poolItemsKey = pool_str()
         local headKey      = pool_pointer_str(true)
         local tailKey      = pool_pointer_str(false)
-        local function push_to_tail(itemName, expiry)  -- push the item to the free list
-            local tail = redis.call("GET", tailKey)
-            local head = redis.call("GET", headKey)
-            if not tail then
-                tail = ""
+        local function current_pointer(pointerKey)
+            local pointer = redis.call("GET", pointerKey)
+            if not pointer then
+                return ""
             end
+            return pointer
+        end
+        local function current_head()
+            return current_pointer(headKey)
+        end
+        local function current_tail()
+            return current_pointer(tailKey)
+        end
+        local function set_current_head(pointer)
+            redis.call("SET", headKey, pointer)
+        end
+        local function set_current_tail(pointer)
+            redis.call("SET", tailKey, pointer)
+        end
+
+        local function push_to_tail(itemName, expiry)  -- push the item to the free list, item should not be in the free list
+            local head = current_head()
+            local tail = current_tail()
+            ---- this is the debug code
+            local itemVal = redis.call("HGET", poolItemsKey, itemName)
+            if itemVal then
+                local prev, next, expiry = split_pool_value(itemVal)
+                assert(prev == "#ALLOCATED" or prev == "", "item should be allocated or free")
+                assert(next == "" or next == "#ALLOCATED", "item should be the last item in the free list")
+            end
+            -- set the item points to the tail
             redis.call("HSET", poolItemsKey, itemName, join_pool_value(tail, "", expiry))
-            if tail == "" then  -- the free list is empty chain
-                redis.call("SET", headKey, itemName)
+            if tail == "" or head == "" then  -- the free list is empty chain
+                assert(tail == "" and head == "", "head or tail should not be empty")
+                set_current_head(itemName)
             else
                 local tailVal = redis.call("HGET", poolItemsKey, tail)
-                local prev, next, expiry = split_pool_value(tailVal)
-                assert(next == "" or next == '#ALLOCATED', "tail is not the last item in the free list")
-                redis.call("HSET", poolItemsKey, tail, join_pool_value(prev, itemName, expiry))
+                assert(tailVal, "tail value should not be nil")
+                local tailPrev, tailNext, tailExpiry = split_pool_value(tailVal)
+                assert(tailNext == "", "tail should be the last item in the free list")
+                redis.call("HSET", poolItemsKey, tail, join_pool_value(tailPrev, itemName, tailExpiry))
             end
-            redis.call("SET", tailKey, itemName)  -- set the tail point to the new item
+            set_current_tail(itemName)
         end
+
         -- Ensure the new head node is well-formed (prev="") and update tail/head
         local function set_item_head_nil(nextItemName)
             if nextItemName == "" then
@@ -671,30 +699,32 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 redis.call("HSET", poolItemsKey, nextItemName, join_pool_value("", nextNext, nextExpiry))
             end
         end
+
         local function pop_from_head()  -- pop the item from the free list
-            local head = redis.call("GET", headKey)
+            local head = current_head()
             if not head or head == "" then  -- the free list is empty
                 return nil, -1
             end
             local headVal = redis.call("HGET", poolItemsKey, head)
-            assert(headVal ~= nil, "head should not nil")
+            assert(headVal, "head value should not be nil")
             local headPrev, headNext, headExpiry = split_pool_value(headVal)
             -- Check if the head item has expired or is locked
             if is_expiry_invalid(headExpiry) then  -- the item has expired
                 redis.call("HDEL", poolItemsKey, head)
-                redis.call("SET", headKey, headNext)
-                set_item_head_nil(headNext)
+                set_current_head(headNext)
+                -- set_item_head_nil(headNext)
                 return pop_from_head()
             elseif redis.call("EXISTS", key_str(head)) > 0 then  -- the item is locked
                 redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
-                redis.call("SET", headKey, headNext)
-                set_item_head_nil(headNext)
+                set_current_head(headNext)
+                -- set_item_head_nil(headNext)
                 return pop_from_head()
             elseif headNext == "" then  -- the item is the last in the free list
                 redis.call("SET", headKey, "")
                 redis.call("SET", tailKey, "")
             else
                 local nextVal = redis.call("HGET", poolItemsKey, headNext)
+                assert(nextVal, "next value should not be nil")
                 local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)
                 redis.call("HSET", poolItemsKey, headNext, join_pool_value("", nextNext, nextExpiry))
                 redis.call("SET", headKey, headNext)
@@ -702,58 +732,47 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
             return head, headExpiry
         end
+
         local function set_item_allocated(itemName, val)
             if not val then
                 val = redis.call("HGET", pool_str(), itemName)
             end
-            if val then
-                local prev, next, expiry = split_pool_value(val)
-                if prev ~= "#ALLOCATED" then
-                    if is_expiry_invalid(expiry) then
-                        redis.call("HDEL", poolItemsKey, itemName)
-                    end
-                    if prev ~= "" then
-                        local prevVal = redis.call("HGET", poolItemsKey, prev)
-                        if prevVal then
-                            local prevPrev, prevNext, prevExpiry = split_pool_value(prevVal)
-                            redis.call("HSET", poolItemsKey, prev, join_pool_value(prevPrev, next, prevExpiry))
-                        end
-                    else
-                        redis.call("SET", headKey, next or "")
-                    end
-                    if next ~= "" then
-                        local nextVal = redis.call("HGET", poolItemsKey, next)
-                        if nextVal then
-                            local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)
-                            redis.call("HSET", poolItemsKey, next, join_pool_value(prev, nextNext, nextExpiry))
-                        end
-                    else
-                        redis.call("SET", tailKey, prev or "")
-                    end
-                    redis.call("HSET", poolItemsKey, itemName, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
-                    -- If we removed the current head, update head pointer
-                    local savedHead = redis.call("GET", headKey)
-                    if savedHead == itemName then
-                        redis.call("SET", headKey, next or "")
-                    end
+            assert(val, "val should not be nil")
+            local prev, next, expiry = split_pool_value(val)
+            if prev ~= "#ALLOCATED" then
+                assert(next ~= "#ALLOCATED", "next item should not be allocated")
+                if is_expiry_invalid(expiry) then
+                    redis.call("HDEL", poolItemsKey, itemName)
                 end
-            end
-            -- Invariant fix: ensure current head's prev pointer is always "".
-            local currentHead = redis.call("GET", headKey)
-            if currentHead and currentHead ~= "" then
-                local currentHeadVal = redis.call("HGET", poolItemsKey, currentHead)
-                if currentHeadVal then
-                    local curPrev, curNext, curExpiry = split_pool_value(currentHeadVal)
-                    if curPrev ~= "" then
-                        redis.call("HSET", poolItemsKey, currentHead, join_pool_value("", curNext, curExpiry))
-                    end
+                if prev ~= "" then
+                    local prevVal = redis.call("HGET", poolItemsKey, prev)
+                    assert(prevVal, "prev value should not be nil", prev, prevVal)
+                    local prevPrev, prevNext, prevExpiry = split_pool_value(prevVal)
+                    redis.call("HSET", poolItemsKey, prev, join_pool_value(prevPrev, next, prevExpiry))
+                else
+                    redis.call("SET", headKey, next)
                 end
+                if next ~= "" then
+                    local nextVal = redis.call("HGET", poolItemsKey, next)
+                    assert(nextVal, "next value should not be nil")
+                    local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)
+                    redis.call("HSET", poolItemsKey, next, join_pool_value(prev, nextNext, nextExpiry))
+                else
+                    redis.call("SET", tailKey, prev)
+                end
+                redis.call("HSET", poolItemsKey, itemName, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
+                -- If we removed the current head, update head pointer
+                -- local savedHead = redis.call("GET", headKey)
+                -- if savedHead == itemName then
+                --     redis.call("SET", headKey, next or "")
+                -- end
+            else
+                assert(next == "#ALLOCATED", "next item should also be allocated")
             end
         end
-        local function check_item_health(itemName, value)
-            if not value then
-                value = redis.call("HGET", pool_str(), itemName)
-            end
+
+        local function check_item_health(itemName)
+            local value = redis.call("HGET", pool_str(), itemName)
             assert(value, "value should not be nil")
             local prev, next, expiry = split_pool_value(value)
             if is_expiry_invalid(expiry) then  -- Check if the item has expired
@@ -771,6 +790,37 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                     set_item_allocated(itemName, value)
                 end
             end
+        end
+
+        -- Return an array of item names in the free list order (head -> tail)
+        -- Does NOT modify the list. Uses a bounded loop (at most pool size)
+        -- to avoid infinite traversal when the list structure is corrupted.
+        local function get_free_list()
+            local items = {{}}
+            local current = redis.call("GET", headKey)
+            if not current or current == "" then
+                return items  -- empty list
+            end
+            local max_iters = tonumber(redis.call("HLEN", poolItemsKey))
+            if not max_iters or max_iters <= 0 then
+                return items
+            end
+            for i = 1, max_iters do
+                if not current or current == "" then
+                    break
+                end
+                table.insert(items, current)
+                local val = redis.call("HGET", poolItemsKey, current)
+                if not val then
+                    break  -- corrupted pointer
+                end
+                local _prev, nxt, _expiry = split_pool_value(val)
+                if nxt == "" or nxt == "#ALLOCATED" then
+                    break -- reached tail or allocated marker
+                end
+                current = nxt
+            end
+            return items
         end
         '''
 
@@ -1149,6 +1199,16 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         """
         self.free_keys(obj.key, timeout=timeout)
 
+    @cached_property
+    def _get_free_list_script(self):
+        return self.redis.register_script(f'''
+        {self._lua_required_string}
+        return get_free_list()
+        ''')
+
+    def get_free_list(self):
+        return self._get_free_list_script()
+
     def _gc_cursor_str(self):
         """Get the Redis key for the garbage collection cursor.
 
@@ -1190,10 +1250,11 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         local scanResult = redis.call("HSCAN", pool_str(), get_cursor(), "COUNT", n)
         local newCursor  = scanResult[1]
         local kvList     = scanResult[2]
+        local t = ""
         for i = 1, #kvList, 2 do
             local itemName = kvList[i]
-            local val      = kvList[i + 1]
-            check_item_health(itemName, val)
+            -- local val      = kvList[i + 1]
+            check_item_health(itemName)
         end
         set_cursor(newCursor)
         ''')
