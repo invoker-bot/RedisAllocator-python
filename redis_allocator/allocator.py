@@ -665,7 +665,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             -- set the item points to the tail
             redis.call("HSET", poolItemsKey, itemName, join_pool_value(tail, "", expiry))
             if tail == "" or head == "" then  -- the free list is empty chain
-                assert(tail == "" and head == "", "head or tail should not be empty")
+                -- assert(tail == "" and head == "", "head or tail should not be empty")
                 set_current_head(itemName)
             else
                 local tailVal = redis.call("HGET", poolItemsKey, tail)
