@@ -345,7 +345,7 @@ class RedisAllocatorPolicy(ABC, Generic[U]):
                 else:
                     obj = None
                 inputs.append(RedisAllocatorObject(allocator, key, obj, params))
-            results = list(executor.map(self.check_health_once, inputs, timeout=max_threads * lock_duration / (len(inputs) + 1)))
+            results = list(executor.map(self.check_health_once, inputs, timeout=lock_duration))
             healthy = sum(results)
             unhealthy = len(results) - healthy
             return healthy, unhealthy
