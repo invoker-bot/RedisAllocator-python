@@ -304,6 +304,11 @@ class RedisAllocatorPolicy(ABC, Generic[U]):
         """
         pass
 
+    @abstractmethod
+    def refresh_pool_all(self, allocator: 'RedisAllocator[U]'):
+        """Refresh the allocation pool."""
+        pass
+
     def check_health_once(self, r_obj: RedisAllocatorObject[U], duration: int = 3600) -> bool:
         """Check the health of the object."""
         with contextlib.closing(r_obj.open()):
@@ -404,6 +409,10 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
         self._allocator = weakref.ref(allocator)
         self._update_lock_key = f"{allocator._pool_str()}|policy_update_lock"
         atexit.register(lambda: self.finalize(self._allocator()))
+
+    def refresh_pool_all(self, allocator: 'RedisAllocator[U]'):
+        for _ in range(self.updater.params):
+            self.refresh_pool(allocator)
 
     def malloc(self, allocator: 'RedisAllocator[U]', timeout: Timeout = 120,
                obj: Optional[U] = None, params: Optional[dict] = None,
@@ -786,9 +795,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                     push_to_tail(itemName, expiry)
                 end
             else
-                if locked then
-                    set_item_allocated(itemName, value)
-                end
+                -- if locked then
+                --     set_item_allocated(itemName, value)
+                -- end
             end
         end
 
