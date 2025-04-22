@@ -411,6 +411,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
         atexit.register(lambda: self.finalize(self._allocator()))
 
     def refresh_pool_all(self, allocator: 'RedisAllocator[U]'):
+        allocator.clear()
         for _ in range(self.updater.params):
             self.refresh_pool(allocator)
 
@@ -834,6 +835,18 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         '''
 
     @cached_property
+    def _clear_script(self):
+        return self.redis.register_script(f'''
+        {self._lua_required_string}
+        redis.call("DEL", poolItemsKey)
+        redis.call("SET", headKey, "")
+        redis.call("SET", tailKey, "")
+        ''')
+
+    def clear(self):
+        self._clear_script()
+
+    @cached_property
     def _extend_script(self):
         """Cached Lua script to add or update keys in the pool.
 
@@ -974,11 +987,6 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             String representation of the Redis key for the cache
         """
         return f'{self.prefix}|{self.suffix}-cache'
-
-    def clear(self):
-        """Clear all resources from the allocation pool and cache."""
-        super().clear()
-        self.redis.delete(self._cache_str)
 
     def _soft_bind_name(self, name: str) -> str:
         """Get the Redis key for a soft binding.
