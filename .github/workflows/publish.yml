@@ -45,3 +45,13 @@ jobs:
             packages-dir: dist/
             skip-existing: true
             verbose: true
+
+      - name: Publish package to PyPI Invoker
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+            user: alpha
+            password: ${{ secrets.ALPHA_PYPI_API_TOKEN }}
+            repository-url: https://pypi.piesource.cn/alpha/private/
+            packages-dir: dist/
+            skip-existing: true
+            verbose: true
