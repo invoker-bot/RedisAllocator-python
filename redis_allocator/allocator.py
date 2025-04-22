@@ -412,7 +412,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
 
     def refresh_pool_all(self, allocator: 'RedisAllocator[U]'):
         allocator.clear()
-        for _ in range(self.updater.params):
+        for _ in range(len(self.updater.params)):
             self.refresh_pool(allocator)
 
     def malloc(self, allocator: 'RedisAllocator[U]', timeout: Timeout = 120,
