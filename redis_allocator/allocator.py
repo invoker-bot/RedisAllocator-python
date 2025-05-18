@@ -17,17 +17,16 @@ Key features:
 4. Support for an updater to refresh the pool's keys periodically
 5. Policy-based control of allocation behavior through RedisAllocatorPolicy
 """
+import random
 import atexit
 import logging
 import weakref
 import contextlib
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any, Callable, Optional, TypeVar, Generic, Sequence, Iterable
 from functools import cached_property
 from threading import current_thread
 from concurrent.futures import ThreadPoolExecutor
-from typing import (Optional, TypeVar, Generic,
-                    Sequence, Iterable)
 from redis import StrictRedis as Redis
 from cachetools import cached, TTLCache
 from .lock import RedisLockPool, Timeout
@@ -412,8 +411,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
 
     def refresh_pool_all(self, allocator: 'RedisAllocator[U]'):
         allocator.clear()
-        for _ in range(len(self.updater.params)):
-            self.refresh_pool(allocator)
+        self.refresh_pool(allocator, n=len(self.updater.params))
 
     def malloc(self, allocator: 'RedisAllocator[U]', timeout: Timeout = 120,
                obj: Optional[U] = None, params: Optional[dict] = None,
@@ -469,7 +467,7 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
             # If we got here, we acquired the lock, so we can update the pool
             self.refresh_pool(allocator)
 
-    def refresh_pool(self, allocator: 'RedisAllocator[U]'):
+    def refresh_pool(self, allocator: 'RedisAllocator[U]', shuffle=True, n=1):
         """Refresh the allocation pool using the updater.
 
         Args:
@@ -478,11 +476,16 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
         if self.updater is None:
             return
 
-        keys = self.updater()
+        keys = []
+        for _ in range(n):
+            keys.extend(self.updater())
 
         if len(keys) == 0:
             logger.warning("No keys to update to the pool")
             return
+
+        if shuffle:
+            random.shuffle(keys)
 
         # Update the pool based on the number of keys
         if len(self.updater) == 1:

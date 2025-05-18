@@ -62,7 +62,6 @@ class BaseLock(ABC):
         Returns:
             The current status of the key.
         """
-        pass
 
     @abstractmethod
     def update(self, key: str, value='1', timeout: Timeout = 120):
@@ -73,7 +72,6 @@ class BaseLock(ABC):
             value: The value to set for the key.
             timeout: The lock timeout in seconds.
         """
-        pass
 
     @abstractmethod
     def lock(self, key: str, value: str = '1', timeout: Timeout = 120) -> bool:
@@ -87,7 +85,6 @@ class BaseLock(ABC):
         Returns:
             True if the ownership of the key is successfully acquired, False otherwise.
         """
-        pass
 
     @abstractmethod
     def is_locked(self, key: str) -> bool:
@@ -99,7 +96,6 @@ class BaseLock(ABC):
         Returns:
             True if the key is locked, False otherwise.
         """
-        pass
 
     @abstractmethod
     def lock_value(self, key: str) -> Optional[str]:
@@ -111,7 +107,6 @@ class BaseLock(ABC):
         Returns:
             The value of the key if the key is locked, None otherwise.
         """
-        pass
 
     @abstractmethod
     def rlock(self, key: str, value: str = '1', timeout=120) -> bool:
@@ -127,7 +122,6 @@ class BaseLock(ABC):
         Returns:
             True if the ownership of the key is successfully acquired, False otherwise.
         """
-        pass
 
     @abstractmethod
     def unlock(self, key: str) -> bool:
@@ -139,7 +133,6 @@ class BaseLock(ABC):
         Returns:
             True if the key is successfully released, False if the key is not locked.
         """
-        pass
 
     @abstractmethod
     def _conditional_setdel(self, op: str, key: str, value: float, set_value: Optional[float] = None,
@@ -157,7 +150,6 @@ class BaseLock(ABC):
         Returns:
             Whether the operation was successful.
         """
-        pass
 
     def setgt(self, key: str, value: float, set_value: Optional[float] = None, ex: Optional[int] = None) -> bool:
         """Sets a new value when the comparison value is greater than the current value."""
@@ -229,32 +221,26 @@ class BaseLockPool(BaseLock, metaclass=ABCMeta):
     @abstractmethod
     def extend(self, keys: Optional[Sequence[str]] = None):
         """Extend the pool with the specified keys."""
-        pass
 
     @abstractmethod
     def shrink(self, keys: Sequence[str]):
         """Shrink the pool by removing the specified keys."""
-        pass
 
     @abstractmethod
     def assign(self, keys: Optional[Sequence[str]] = None):
         """Assign keys to the pool, replacing any existing keys."""
-        pass
 
     @abstractmethod
     def clear(self):
         """Empty the pool."""
-        pass
 
     @abstractmethod
     def keys(self) -> Iterable[str]:
         """Get the keys in the pool."""
-        pass
 
     @abstractmethod
     def _get_key_lock_status(self, keys: Iterable[str]) -> Iterable[bool]:
         """Get the lock status of the specified keys."""
-        pass
 
     def values_lock_status(self) -> Iterable[bool]:
         """Get the lock status of all keys in the pool."""
