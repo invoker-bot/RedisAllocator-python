@@ -1,0 +1,1033 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>redis_allocator.lock &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+      <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+      <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+      <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">redis_allocator.lock</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for redis_allocator.lock</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Redis-based locking mechanisms for distributed coordination.</span>
+
+<span class="sd">This module provides Redis-based locking classes that enable distributed</span>
+<span class="sd">coordination and ensure data consistency across distributed processes.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">ABCMeta</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">IntEnum</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached_property</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrictRedis</span> <span class="k">as</span> <span class="n">Redis</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+<span class="n">Timeout</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="LockStatus">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.LockStatus">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LockStatus</span><span class="p">(</span><span class="n">IntEnum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Enumeration representing the status of a Redis lock.</span>
+
+<span class="sd">    The LockStatus enum defines the possible states of a Redis lock:</span>
+
+<span class="sd">    - FREE: The lock is not being used.</span>
+<span class="sd">    - UNAVAILABLE: The lock is being used by another program, or it has been marked as unavailable for a certain period of time.</span>
+<span class="sd">    - LOCKED: The lock is being used by the current program.</span>
+<span class="sd">    - ERROR: The lock is being used permanently, indicating a potential issue with the program.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">FREE</span> <span class="o">=</span> <span class="mh">0x00</span>
+    <span class="n">UNAVAILABLE</span> <span class="o">=</span> <span class="mh">0x01</span>
+    <span class="n">LOCKED</span> <span class="o">=</span> <span class="mh">0x02</span>
+    <span class="n">ERROR</span> <span class="o">=</span> <span class="mh">0x04</span></div>
+
+
+
+<div class="viewcode-block" id="BaseLock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaseLock</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class defining the interface for lock implementations.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        eps: Epsilon value for floating point comparison.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span>
+
+<div class="viewcode-block" id="BaseLock.__init__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a BaseLock instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            eps: Epsilon value for floating point comparison.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.key_status">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.key_status">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">key_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LockStatus</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the status of a key.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to check the status of.</span>
+<span class="sd">            timeout: The lock timeout in seconds.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The current status of the key.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.update">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.update">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Lock a key for a specified duration without checking if the key is already locked.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to lock.</span>
+<span class="sd">            value: The value to set for the key.</span>
+<span class="sd">            timeout: The lock timeout in seconds.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.lock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.lock">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Try to lock a key for a specified duration.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to lock.</span>
+<span class="sd">            value: The value to set for the key.</span>
+<span class="sd">            timeout: The lock timeout in seconds.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the ownership of the key is successfully acquired, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.is_locked">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.is_locked">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_locked</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a key is locked.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to check.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the key is locked, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.lock_value">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.lock_value">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lock_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the value of a locked key.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to get the value of.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The value of the key if the key is locked, None otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.rlock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.rlock">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rlock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Try to lock a key for a specified duration.</span>
+
+<span class="sd">        When the value is the same as the current value, the function will return True.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to lock.</span>
+<span class="sd">            value: The value to set for the key.</span>
+<span class="sd">            timeout: The lock timeout in seconds.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the ownership of the key is successfully acquired, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.unlock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.unlock">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unlock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forcefully release a key without checking if the key is locked.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to release.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the key is successfully released, False if the key is not locked.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_conditional_setdel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                            <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">isdel</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Conditionally set or del a key&#39;s value based on comparison with current value.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            op: Comparison operator (&#39;&gt;&#39;, &#39;&lt;&#39;, &#39;&gt;=&#39;, &#39;&lt;=&#39;, &#39;==&#39;, &#39;!=&#39;).</span>
+<span class="sd">            key: The key to set or delete.</span>
+<span class="sd">            value: The value to compare with.</span>
+<span class="sd">            set_value: The value to set, if None, will use value instead.</span>
+<span class="sd">            ex: Optional expiration time in seconds.</span>
+<span class="sd">            isdel: Whether to delete the key or set the value if the condition is met.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Whether the operation was successful.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="BaseLock.setgt">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.setgt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setgt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a new value when the comparison value is greater than the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&gt;&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.setlt">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.setlt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setlt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a new value when the comparison value is less than the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&lt;&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.setge">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.setge">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a new value when the comparison value is greater than or equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&gt;=&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.setle">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.setle">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a new value when the comparison value is less than or equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&lt;=&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.seteq">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.seteq">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">seteq</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a new value when the comparison value is equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;==&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.setne">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.setne">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setne</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a new value when the comparison value is not equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;!=&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.delgt">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.delgt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delgt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes a key when the comparison value is greater than the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&gt;&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.dellt">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.dellt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dellt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes a key when the comparison value is less than the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&lt;&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.delge">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.delge">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes a key when the comparison value is greater than or equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&gt;=&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.delle">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.delle">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes a key when the comparison value is less than or equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;&lt;=&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.deleq">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.deleq">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">deleq</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes a key when the comparison value is equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;==&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseLock.delne">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLock.delne">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delne</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes a key when the comparison value is not equal to the current value.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel</span><span class="p">(</span><span class="s1">&#39;!=&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_to_seconds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a timeout to seconds.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">timeout</span> <span class="o">=</span> <span class="n">datetime</span><span class="p">(</span><span class="mi">2099</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">):</span>
+            <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">timeout</span></div>
+
+
+
+<div class="viewcode-block" id="BaseLockPool">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaseLockPool</span><span class="p">(</span><span class="n">BaseLock</span><span class="p">,</span> <span class="n">metaclass</span><span class="o">=</span><span class="n">ABCMeta</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class defining the interface for lock pool implementations.</span>
+
+<span class="sd">    A lock pool manages a collection of lock keys as a group, providing methods</span>
+<span class="sd">    to track, add, remove, and check lock status of multiple keys.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        eps: Epsilon value for floating point comparison.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="BaseLockPool.extend">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.extend">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extend the pool with the specified keys.&quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.shrink">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.shrink">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shrink</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Shrink the pool by removing the specified keys.&quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.assign">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.assign">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assign keys to the pool, replacing any existing keys.&quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.clear">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.clear">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Empty the pool.&quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.keys">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.keys">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the keys in the pool.&quot;&quot;&quot;</span></div>
+
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_key_lock_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the lock status of the specified keys.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="BaseLockPool.values_lock_status">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.values_lock_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">values_lock_status</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the lock status of all keys in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_key_lock_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.items_locked_status">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.items_locked_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">items_locked_status</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get (key, lock_status) pairs for all keys in the pool.&quot;&quot;&quot;</span>
+        <span class="n">all_keys</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="k">return</span> <span class="nb">zip</span><span class="p">(</span><span class="n">all_keys</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_key_lock_status</span><span class="p">(</span><span class="n">all_keys</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.health_check">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.health_check">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">health_check</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check the health status of the keys in the pool.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A tuple of (locked_count, free_count)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">items</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values_lock_status</span><span class="p">())</span>
+        <span class="n">locked</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span> <span class="k">if</span> <span class="n">item</span><span class="p">)</span>
+        <span class="n">free</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span> <span class="o">-</span> <span class="n">locked</span>
+        <span class="k">return</span> <span class="n">locked</span><span class="p">,</span> <span class="n">free</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.__len__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.__len__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the number of keys in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span></div>
+
+
+<div class="viewcode-block" id="BaseLockPool.__iter__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.BaseLockPool.__iter__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Iterate over the keys in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RedisLock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisLock</span><span class="p">(</span><span class="n">BaseLock</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Redis-based lock implementation.</span>
+
+<span class="sd">    Uses standard Redis commands (SET with NX, EX options) for basic locking</span>
+<span class="sd">    and Lua scripts for conditional operations (set/del based on value comparison).</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        redis: StrictRedis client instance (must decode responses).</span>
+<span class="sd">        prefix: Prefix for all Redis keys managed by this lock instance.</span>
+<span class="sd">        suffix: Suffix for Redis keys to distinguish lock types (e.g., &#39;lock&#39;).</span>
+<span class="sd">        eps: Epsilon for float comparisons in conditional Lua scripts.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">redis</span><span class="p">:</span> <span class="n">Redis</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">suffix</span><span class="p">:</span> <span class="nb">str</span>
+
+<div class="viewcode-block" id="RedisLock.__init__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">redis</span><span class="p">:</span> <span class="n">Redis</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;lock&quot;</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a RedisLock instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            redis: Redis client instance.</span>
+<span class="sd">            prefix: Prefix for Redis keys.</span>
+<span class="sd">            suffix: Suffix for Redis keys.</span>
+<span class="sd">            eps: Epsilon value for floating point comparison.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="s2">&quot;&#39;&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">prefix</span> <span class="ow">and</span> <span class="s2">&quot;&#39;&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">suffix</span><span class="p">,</span> <span class="s2">&quot;Prefix and suffix cannot contain single quotes&quot;</span>
+        <span class="k">assert</span> <span class="n">redis</span><span class="o">.</span><span class="n">get_encoder</span><span class="p">()</span><span class="o">.</span><span class="n">decode_responses</span><span class="p">,</span> <span class="s2">&quot;Redis must be configured to decode responses&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span> <span class="o">=</span> <span class="n">redis</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">suffix</span> <span class="o">=</span> <span class="n">suffix</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_lua_required_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Base Lua script providing the key_str function.</span>
+
+<span class="sd">        - key_str(key: str): Constructs the full Redis key using prefix and suffix.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        local function key_str(key)</span>
+<span class="s1">            return &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">:&#39; .. key</span>
+<span class="s1">        end</span>
+<span class="s1">        &#39;&#39;&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_key_str</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">:</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">&#39;</span>
+
+<div class="viewcode-block" id="RedisLock.key_status">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.key_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">key_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LockStatus</span><span class="p">:</span>
+        <span class="n">ttl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">ttl</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">ttl</span> <span class="o">&gt;</span> <span class="n">timeout</span><span class="p">:</span>  <span class="c1"># If TTL is greater than the required expiration time, it means the usage is incorrect</span>
+            <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">UNAVAILABLE</span>
+        <span class="k">elif</span> <span class="n">ttl</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">LOCKED</span>
+        <span class="k">elif</span> <span class="n">ttl</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">ERROR</span>  <span class="c1"># Permanent lock</span>
+        <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">FREE</span></div>
+
+
+<div class="viewcode-block" id="RedisLock.update">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">),</span> <span class="n">value</span><span class="p">,</span> <span class="n">ex</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisLock.lock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.lock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">key_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key_str</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">ex</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisLock.is_locked">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.is_locked">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_locked</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="RedisLock.lock_value">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.lock_value">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lock_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="RedisLock.rlock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.rlock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rlock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">key_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="n">old_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key_str</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">ex</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">get</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">old_value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">old_value</span> <span class="o">==</span> <span class="n">value</span></div>
+
+
+<div class="viewcode-block" id="RedisLock.unlock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLock.unlock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unlock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">)))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_conditional_setdel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                            <span class="n">isdel</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Executes the conditional set/delete Lua script.</span>
+
+<span class="sd">        Passes necessary arguments (key, compare_value, set_value, expiry, isdel flag)</span>
+<span class="sd">        to the cached Lua script corresponding to the comparison operator (`op`).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Convert None to a valid value for Redis (using -1 to indicate no expiration)</span>
+        <span class="n">key_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="n">ex_value</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">if</span> <span class="n">ex</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ex</span>
+        <span class="n">isdel_value</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span> <span class="k">if</span> <span class="n">isdel</span> <span class="k">else</span> <span class="s1">&#39;0&#39;</span>
+        <span class="k">if</span> <span class="n">set_value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">set_value</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel_script</span><span class="p">[</span><span class="n">op</span><span class="p">](</span><span class="n">keys</span><span class="o">=</span><span class="p">[</span><span class="n">key_value</span><span class="p">],</span>
+                                                   <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">value</span><span class="p">,</span> <span class="n">set_value</span><span class="p">,</span> <span class="n">ex_value</span><span class="p">,</span> <span class="n">isdel_value</span><span class="p">])</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_conditional_setdel_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">op</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_conditional_setdel_lua_script</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">))</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span>
+                <span class="p">(</span><span class="s1">&#39;&gt;&#39;</span><span class="p">,</span> <span class="s1">&#39;&lt;&#39;</span><span class="p">,</span> <span class="s1">&#39;&gt;=&#39;</span><span class="p">,</span> <span class="s1">&#39;&lt;=&#39;</span><span class="p">,</span> <span class="s1">&#39;==&#39;</span><span class="p">,</span> <span class="s1">&#39;!=&#39;</span><span class="p">)}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_conditional_setdel_lua_script</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates the Lua script for conditional set/delete operations.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            op: The comparison operator (&#39;&gt;&#39;, &#39;&lt;&#39;, &#39;&gt;=&#39;, &#39;&lt;=&#39;, &#39;==&#39;, &#39;!=&#39;).</span>
+<span class="sd">            eps: Epsilon for floating-point comparisons (&#39;==&#39;, &#39;!=&#39;, &#39;&gt;=&#39;, &#39;&lt;=&#39;).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A Lua script string that:</span>
+<span class="sd">            1. Gets the current numeric value of the target key (KEYS[1]).</span>
+<span class="sd">            2. Compares it with the provided compare_value (ARGV[1]) using the specified `op`.</span>
+<span class="sd">            3. If the key doesn&#39;t exist or the condition is true:</span>
+<span class="sd">               - If `isdel` (ARGV[4]) is true, deletes the key.</span>
+<span class="sd">               - Otherwise, sets the key to `new_value` (ARGV[2]) with optional expiry `ex` (ARGV[3]).</span>
+<span class="sd">            4. Returns true if the operation was performed, false otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">match</span> <span class="n">op</span><span class="p">:</span>
+            <span class="k">case</span> <span class="s1">&#39;&gt;&#39;</span><span class="p">:</span>
+                <span class="n">condition</span> <span class="o">=</span> <span class="s1">&#39;compare_value &gt; current_value&#39;</span>
+            <span class="k">case</span> <span class="s1">&#39;&lt;&#39;</span><span class="p">:</span>
+                <span class="n">condition</span> <span class="o">=</span> <span class="s1">&#39;compare_value &lt; current_value&#39;</span>
+            <span class="k">case</span> <span class="s1">&#39;&gt;=&#39;</span><span class="p">:</span>
+                <span class="n">condition</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;compare_value &gt;= current_value - </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s1">&#39;</span>
+            <span class="k">case</span> <span class="s1">&#39;&lt;=&#39;</span><span class="p">:</span>
+                <span class="n">condition</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;compare_value &lt;= current_value + </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s1">&#39;</span>
+            <span class="k">case</span> <span class="s1">&#39;==&#39;</span><span class="p">:</span>
+                <span class="n">condition</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;abs(compare_value - current_value) &lt; </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s1">&#39;</span>
+            <span class="k">case</span> <span class="s1">&#39;!=&#39;</span><span class="p">:</span>
+                <span class="n">condition</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;abs(compare_value - current_value) &gt; </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s1">&#39;</span>
+            <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid operator: </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local abs = math.abs</span>
+<span class="s1">        local current_key = KEYS[1]</span>
+<span class="s1">        local current_value = tonumber(redis.call(&#39;GET&#39;, current_key))</span>
+<span class="s1">        local compare_value = tonumber(ARGV[1])</span>
+<span class="s1">        local new_value = tonumber(ARGV[2])</span>
+<span class="s1">        local ex = tonumber(ARGV[3])</span>
+<span class="s1">        local isdel = ARGV[4] ~= &#39;0&#39;</span>
+<span class="s1">        if current_value == nil or </span><span class="si">{</span><span class="n">condition</span><span class="si">}</span><span class="s1"> then</span>
+<span class="s1">            if isdel then</span>
+<span class="s1">                redis.call(&#39;DEL&#39;, current_key)</span>
+<span class="s1">            else</span>
+<span class="s1">                if ex ~= nil and ex &gt; 0 then</span>
+<span class="s1">                    redis.call(&#39;SET&#39;, current_key, new_value, &#39;EX&#39;, ex)</span>
+<span class="s1">                else</span>
+<span class="s1">                    redis.call(&#39;SET&#39;, current_key, new_value)</span>
+<span class="s1">                end</span>
+<span class="s1">            end</span>
+<span class="s1">            return true</span>
+<span class="s1">        end</span>
+<span class="s1">        return false</span>
+<span class="s1">        &#39;&#39;&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">RedisLock</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">==</span> <span class="n">value</span><span class="o">.</span><span class="n">prefix</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">suffix</span> <span class="o">==</span> <span class="n">value</span><span class="o">.</span><span class="n">suffix</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">hash</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="RedisLockPool">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisLockPool</span><span class="p">(</span><span class="n">RedisLock</span><span class="p">,</span> <span class="n">BaseLockPool</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Manages a collection of RedisLock keys as a logical pool.</span>
+
+<span class="sd">    Uses a Redis Set (`&lt;prefix&gt;|&lt;suffix&gt;|pool`) to store the identifiers (keys)</span>
+<span class="sd">    belonging to the pool. Inherits locking logic from RedisLock.</span>
+
+<span class="sd">    Provides methods to add (`extend`), remove (`shrink`), replace (`assign`),</span>
+<span class="sd">    and query (`keys`, `__contains__`) the members of the pool.</span>
+<span class="sd">    Also offers methods to check the lock status of pool members (`_get_key_lock_status`).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisLockPool.__init__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">redis</span><span class="p">:</span> <span class="n">Redis</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;lock-pool&#39;</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a RedisLockPool instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            redis: Redis client instance.</span>
+<span class="sd">            prefix: Prefix for Redis keys.</span>
+<span class="sd">            suffix: Suffix for Redis keys.</span>
+<span class="sd">            eps: Epsilon value for floating point comparison.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">redis</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="n">suffix</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">redis</span><span class="o">.</span><span class="n">get_encoder</span><span class="p">()</span><span class="o">.</span><span class="n">decode_responses</span><span class="p">,</span> <span class="s2">&quot;Redis must be configured to decode responses&quot;</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_lua_required_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Base Lua script providing key_str and pool_str functions.</span>
+
+<span class="sd">        - key_str(key: str): Inherited from RedisLock.</span>
+<span class="sd">        - pool_str(): Returns the Redis key for the pool Set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local function pool_str()</span>
+<span class="s1">            return &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">()</span><span class="si">}</span><span class="s1">&#39;</span>
+<span class="s1">        end</span>
+<span class="s1">        &#39;&#39;&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pool_str</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the Redis key for the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">|pool&#39;</span>
+
+<div class="viewcode-block" id="RedisLockPool.extend">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.extend">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extend the pool with the specified keys.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">sadd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">(),</span> <span class="o">*</span><span class="n">keys</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisLockPool.shrink">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.shrink">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shrink</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Shrink the pool by removing the specified keys.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">srem</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">(),</span> <span class="o">*</span><span class="n">keys</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assign_lua_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Lua script to atomically replace the contents of the pool Set.</span>
+
+<span class="sd">        1. Deletes the existing pool Set key (KEYS[1]).</span>
+<span class="sd">        2. Adds all provided keys (ARGV) to the (now empty) pool Set using SADD.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local _pool_str = KEYS[1]</span>
+<span class="s1">        redis.call(&#39;DEL&#39;, _pool_str)</span>
+<span class="s1">        redis.call(&#39;SADD&#39;, _pool_str, unpack(ARGV))</span>
+<span class="s1">        &#39;&#39;&#39;</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assign_lua_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_assign_lua_string</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisLockPool.assign">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.assign">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assign keys to the pool, replacing any existing keys.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_assign_lua_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="n">keys</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">()])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="RedisLockPool.clear">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.clear">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Empty the pool.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="RedisLockPool.keys">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.keys">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the keys in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">smembers</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="RedisLockPool.__contains__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.RedisLockPool.__contains__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a key is in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">sismember</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">(),</span> <span class="n">key</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_key_lock_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the lock status of the specified keys.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">mget</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_key_str</span><span class="p">,</span> <span class="n">keys</span><span class="p">)))</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LockData</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Data structure to store lock information.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        value: The lock value.</span>
+<span class="sd">        expiry: The expiration timestamp.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">value</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expiry</span><span class="p">:</span> <span class="nb">float</span>
+
+
+<div class="viewcode-block" id="ThreadLock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ThreadLock</span><span class="p">(</span><span class="n">BaseLock</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;In-memory, thread-safe lock implementation conforming to BaseLock.</span>
+
+<span class="sd">    Simulates Redis lock behavior using Python&#39;s `threading.RLock` for concurrency</span>
+<span class="sd">    control and a `defaultdict` to store lock data (value and expiry timestamp).</span>
+<span class="sd">    Suitable for single-process scenarios or testing.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        eps: Epsilon for float comparisons.</span>
+<span class="sd">        _locks: defaultdict storing LockData(value, expiry) for each key.</span>
+<span class="sd">        _lock: threading.RLock protecting access to _locks.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ThreadLock.__init__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a ThreadLock instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            eps: Epsilon value for floating point comparison.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">LockData</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>  <span class="c1"># Thread lock to protect access to _locks</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_is_expired</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a lock has expired.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_ttl</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_ttl</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the TTL of a lock in seconds.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">expiry</span> <span class="o">-</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+<div class="viewcode-block" id="ThreadLock.key_status">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.key_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">key_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LockStatus</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the status of a key.&quot;&quot;&quot;</span>
+        <span class="n">ttl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_ttl</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ttl</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">FREE</span>
+        <span class="k">elif</span> <span class="n">ttl</span> <span class="o">&gt;</span> <span class="n">timeout</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">UNAVAILABLE</span>
+        <span class="k">return</span> <span class="n">LockStatus</span><span class="o">.</span><span class="n">LOCKED</span></div>
+
+
+<div class="viewcode-block" id="ThreadLock.update">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Lock a key for a specified duration without checking if already locked.&quot;&quot;&quot;</span>
+        <span class="n">expiry</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_seconds</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">LockData</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="n">expiry</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ThreadLock.lock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.lock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Try to lock a key for a specified duration.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_expired</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+            <span class="n">expiry</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_seconds</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">LockData</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="n">expiry</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="ThreadLock.is_locked">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.is_locked">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_locked</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a key is locked.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_expired</span><span class="p">(</span><span class="n">key</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ThreadLock.lock_value">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.lock_value">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lock_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the value of a locked key.&quot;&quot;&quot;</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">expiry</span> <span class="o">&lt;=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">value</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ThreadLock.rlock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.rlock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rlock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Try to relock a key for a specified duration.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">expiry</span> <span class="o">&gt;</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="ow">and</span> <span class="n">data</span><span class="o">.</span><span class="n">value</span> <span class="o">!=</span> <span class="n">value</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">False</span>
+            <span class="n">expiry</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_seconds</span><span class="p">(</span><span class="n">timeout</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">LockData</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="n">expiry</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="ThreadLock.unlock">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLock.unlock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unlock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forcefully release a key.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compare_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">compare_value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">current_value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compare two values using the specified operator.&quot;&quot;&quot;</span>
+        <span class="k">match</span> <span class="n">op</span><span class="p">:</span>
+            <span class="k">case</span> <span class="s1">&#39;&gt;&#39;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">compare_value</span> <span class="o">&gt;</span> <span class="n">current_value</span>
+            <span class="k">case</span> <span class="s1">&#39;&lt;&#39;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">compare_value</span> <span class="o">&lt;</span> <span class="n">current_value</span>
+            <span class="k">case</span> <span class="s1">&#39;&gt;=&#39;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">compare_value</span> <span class="o">&gt;=</span> <span class="n">current_value</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span>
+            <span class="k">case</span> <span class="s1">&#39;&lt;=&#39;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">compare_value</span> <span class="o">&lt;=</span> <span class="n">current_value</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span>
+            <span class="k">case</span> <span class="s1">&#39;==&#39;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="n">compare_value</span> <span class="o">-</span> <span class="n">current_value</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span>
+            <span class="k">case</span> <span class="s1">&#39;!=&#39;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="n">compare_value</span> <span class="o">-</span> <span class="n">current_value</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">eps</span>
+            <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid operator: </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_conditional_setdel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">set_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                            <span class="n">ex</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">isdel</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Conditionally set or delete a key&#39;s value based on comparison.&quot;&quot;&quot;</span>
+        <span class="n">compare_value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">set_value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">set_value</span> <span class="o">=</span> <span class="n">value</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="c1"># Get current value if key exists and is not expired</span>
+            <span class="n">current_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">current_data</span><span class="o">.</span><span class="n">expiry</span> <span class="o">&lt;=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">():</span>
+                <span class="n">current_value</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">current_value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">current_data</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+            <span class="c1"># Condition check</span>
+            <span class="k">if</span> <span class="n">current_value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compare_values</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">compare_value</span><span class="p">,</span> <span class="n">current_value</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">isdel</span><span class="p">:</span>
+                    <span class="c1"># Delete the key</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># Set the key</span>
+                    <span class="n">expiry</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_seconds</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">LockData</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">set_value</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="n">expiry</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="ThreadLockPool">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ThreadLockPool</span><span class="p">(</span><span class="n">ThreadLock</span><span class="p">,</span> <span class="n">BaseLockPool</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;In-memory, thread-safe lock pool implementation.</span>
+
+<span class="sd">    Manages a collection of lock keys using a Python `set` for the pool members</span>
+<span class="sd">    and inherits the locking logic from `ThreadLock`.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        _pool: Set containing the keys belonging to this pool.</span>
+<span class="sd">        _lock: threading.RLock protecting access to _locks and _pool.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ThreadLockPool.__init__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a ThreadLockPool instance.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_locks</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">LockData</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="s1">&#39;1&#39;</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="ThreadLockPool.extend">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.extend">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extend the pool with the specified keys.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ThreadLockPool.shrink">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.shrink">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shrink</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Shrink the pool by removing the specified keys.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span><span class="o">.</span><span class="n">difference_update</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ThreadLockPool.assign">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.assign">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assign keys to the pool, replacing any existing keys.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ThreadLockPool.clear">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.clear">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Empty the pool.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="ThreadLockPool.keys">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.keys">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the keys in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span></div>
+
+
+<div class="viewcode-block" id="ThreadLockPool.__contains__">
+<a class="viewcode-back" href="../../api/lock.html#redis_allocator.lock.ThreadLockPool.__contains__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a key is in the pool.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_key_lock_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the lock status of the specified keys.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">is_locked</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2025, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

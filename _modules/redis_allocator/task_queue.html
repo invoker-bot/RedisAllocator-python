@@ -1,0 +1,566 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>redis_allocator.task_queue &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+      <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+      <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+      <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">redis_allocator.task_queue</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for redis_allocator.task_queue</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Redis-based task queue system for distributed task management.</span>
+
+<span class="sd">This module provides a RedisTaskQueue class that enables distributed task</span>
+<span class="sd">management and coordination using Redis as the underlying infrastructure.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached_property</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrictRedis</span> <span class="k">as</span> <span class="n">Redis</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="TaskExecutePolicy">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TaskExecutePolicy</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Defines different policies for task execution.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        Local: Execute task only locally</span>
+<span class="sd">        Remote: Execute task only remotely</span>
+<span class="sd">        LocalFirst: Try to execute locally first, then remotely if it fails</span>
+<span class="sd">        RemoteFirst: Try to execute remotely first, then locally if it fails</span>
+<span class="sd">        Auto: Choose execution mode based on whether a remote listener exists</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">Local</span> <span class="o">=</span> <span class="mh">0x00</span>
+    <span class="n">Remote</span> <span class="o">=</span> <span class="mh">0x01</span>
+    <span class="n">LocalFirst</span> <span class="o">=</span> <span class="mh">0x02</span>
+    <span class="n">RemoteFirst</span> <span class="o">=</span> <span class="mh">0x03</span>
+    <span class="n">Auto</span> <span class="o">=</span> <span class="mh">0x04</span></div>
+
+
+
+<div class="viewcode-block" id="RedisTask">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTask">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisTask</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Represents a task to be processed via the RedisTaskQueue.</span>
+
+<span class="sd">    Encapsulates task details like ID, category (name), parameters, and its current state</span>
+<span class="sd">    (progress, result, error). It includes methods for saving state and updating progress.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        id: Unique identifier for this specific task instance.</span>
+<span class="sd">        name: Categorical name for the task (used for routing in the queue).</span>
+<span class="sd">        params: Dictionary containing task-specific input parameters.</span>
+<span class="sd">        expiry: Absolute Unix timestamp when the task should be considered expired.</span>
+<span class="sd">               Used both locally and remotely to timeout waiting operations.</span>
+<span class="sd">        result: Stores the successful return value of the task execution.</span>
+<span class="sd">        error: Stores any exception raised during task execution.</span>
+<span class="sd">        update_progress_time: Timestamp of the last progress update.</span>
+<span class="sd">        current_progress: Current progress value (e.g., items processed).</span>
+<span class="sd">        total_progress: Total expected value for completion (e.g., total items).</span>
+<span class="sd">        _save: Internal callback function provided by RedisTaskQueue to persist</span>
+<span class="sd">               the task&#39;s state (result, error, progress) back to Redis.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span>
+    <span class="n">expiry</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">result</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">error</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">update_progress_time</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">current_progress</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">total_progress</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">100.0</span>
+    <span class="n">_save</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="RedisTask.save">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTask.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save the current state of the task to Redis.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_save</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="RedisTask.update">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTask.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_progress</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">total_progress</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the progress of the task.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            current_progress: The current progress value</span>
+<span class="sd">            total_progress: The total progress value for completion</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            TimeoutError: If the task has expired</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_progress</span> <span class="o">=</span> <span class="n">current_progress</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">total_progress</span> <span class="o">=</span> <span class="n">total_progress</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_progress_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">expiry</span> <span class="o">&lt;</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Task </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s1"> in </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> has expired&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RedisTaskQueue">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisTaskQueue</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides a distributed task queue using Redis lists and key/value storage.</span>
+
+<span class="sd">    Enables submitting tasks (represented by `RedisTask` objects) to named queues</span>
+<span class="sd">    and having them processed either locally (if `task_fn` is provided) or by</span>
+<span class="sd">    remote listeners polling the corresponding Redis list.</span>
+
+<span class="sd">    Key Concepts:</span>
+<span class="sd">    - Task Queues: Redis lists (`&lt;prefix&gt;|&lt;suffix&gt;|task-queue|&lt;name&gt;`) where task IDs</span>
+<span class="sd">                   are pushed for remote workers.</span>
+<span class="sd">    - Task Data: Serialized `RedisTask` objects stored in Redis keys</span>
+<span class="sd">                 (`&lt;prefix&gt;|&lt;suffix&gt;|task-result:&lt;id&gt;`) with an expiry time.</span>
+<span class="sd">                 This stores parameters, progress, results, and errors.</span>
+<span class="sd">    - Listeners: Remote workers use BLPOP on queue lists. To signal their presence,</span>
+<span class="sd">                 they periodically set a listener key (`&lt;prefix&gt;|&lt;suffix&gt;|task-listen|&lt;name&gt;`).</span>
+<span class="sd">    - Execution Policies (`TaskExecutePolicy`): Control whether a task is executed</span>
+<span class="sd">                                            locally, remotely, or attempts one then the other.</span>
+<span class="sd">                                            `Auto` mode checks for a listener key.</span>
+<span class="sd">    - Task Function (`task_fn`): A user-provided function that takes a `RedisTask`</span>
+<span class="sd">                                 and performs the actual work locally.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        redis: StrictRedis client instance.</span>
+<span class="sd">        prefix: Prefix for all Redis keys.</span>
+<span class="sd">        suffix: Suffix for Redis keys (default: &#39;task-queue&#39;).</span>
+<span class="sd">        timeout: Default expiry/timeout for tasks and listener keys (seconds).</span>
+<span class="sd">        interval: Polling interval for remote task fetching (seconds).</span>
+<span class="sd">        task_fn: Callable[[RedisTask], Any] to execute tasks locally.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisTaskQueue.__init__">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">redis</span><span class="p">:</span> <span class="n">Redis</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;task-queue&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">interval</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                 <span class="n">task_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">RedisTask</span><span class="p">],</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a RedisTaskQueue instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            redis: The Redis client used for interacting with Redis.</span>
+<span class="sd">            prefix: The prefix to be added to the task queue key.</span>
+<span class="sd">            suffix: The suffix to be added to the task queue key. Default is &#39;task-queue&#39;.</span>
+<span class="sd">            timeout: The query timeout in seconds. Default is 300s.</span>
+<span class="sd">            interval: The query interval in seconds. Default is 5s.</span>
+<span class="sd">            task_fn: A function to execute tasks locally. Takes a RedisTask and returns Any.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span> <span class="o">=</span> <span class="n">redis</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">suffix</span> <span class="o">=</span> <span class="n">suffix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">interval</span> <span class="o">=</span> <span class="n">interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task_fn</span> <span class="o">=</span> <span class="n">task_fn</span></div>
+
+
+<div class="viewcode-block" id="RedisTaskQueue.build_task">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.build_task">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RedisTask</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a new RedisTask instance with the given parameters.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            id: Unique identifier for the task</span>
+<span class="sd">            name: Name of the task category</span>
+<span class="sd">            params: Dictionary of parameters for the task</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A new RedisTask instance with a save function configured</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">task</span> <span class="o">=</span> <span class="n">RedisTask</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="nb">id</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span> <span class="n">expiry</span><span class="o">=</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">_save</span> <span class="o">=</span> <span class="k">lambda</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_task</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">task</span></div>
+
+
+<div class="viewcode-block" id="RedisTaskQueue.execute_task_remotely">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.execute_task_remotely">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute_task_remotely</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">RedisTask</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">once</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Execute a task remotely by pushing it to the queue.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task: The RedisTask to execute</span>
+<span class="sd">            timeout: Optional timeout in seconds, defaults to self.timeout</span>
+<span class="sd">            once: Whether to delete the result after getting it</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The result of the task</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            TimeoutError: If the task times out</span>
+<span class="sd">            Exception: Any exception raised during task execution</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_task</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">rpush</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_key</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">timeout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+        <span class="k">while</span> <span class="n">timeout</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">interval</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_task</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">once</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">result</span><span class="o">.</span><span class="n">error</span>
+                <span class="k">elif</span> <span class="n">result</span><span class="o">.</span><span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">result</span>
+            <span class="n">timeout</span> <span class="o">-=</span> <span class="bp">self</span><span class="o">.</span><span class="n">interval</span>
+        <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Task </span><span class="si">{</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s1"> in </span><span class="si">{</span><span class="n">task</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> has expired&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisTaskQueue.execute_task_locally">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.execute_task_locally">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute_task_locally</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">RedisTask</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Execute a task locally using the task_fn.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task: The RedisTask to execute</span>
+<span class="sd">            timeout: Optional timeout in seconds, updates task.expiry if provided</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The result of the task</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            Exception: Any exception raised during task execution</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">expiry</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="n">timeout</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_fn</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">task</span><span class="o">.</span><span class="n">result</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">error</span> <span class="o">=</span> <span class="n">e</span>
+            <span class="k">raise</span> <span class="n">e</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">task</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the prefix for queue keys.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The queue prefix</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">|task-queue&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a queue key for the given task name.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: The task name.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The formatted queue key.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extract the queue name from a queue key.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The queue key.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The queue name.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            AssertionError: If the key doesn&#39;t start with the queue prefix.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_prefix</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">key</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_prefix</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_listen_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a listen name for the given task name.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: The task name.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The formatted listen name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">|task-listen|</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span>
+
+<div class="viewcode-block" id="RedisTaskQueue.set_queue_listened">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.set_queue_listened">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_queue_listened</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the queue as being listened to for the given task name.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: The task name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">setex</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_listen_name</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="s1">&#39;1&#39;</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_result_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a result key for the given task ID.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_id: The task ID.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The formatted result key.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">|task-result:</span><span class="si">{</span><span class="n">task_id</span><span class="si">}</span><span class="s1">&#39;</span>
+
+<div class="viewcode-block" id="RedisTaskQueue.set_task">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.set_task">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">:</span> <span class="n">RedisTask</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save a task to Redis.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task: The RedisTask to save.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The task ID.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">_save</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">t</span><span class="p">),</span> <span class="s1">&#39;ascii&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">setex</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_result_key</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">task</span><span class="o">.</span><span class="n">id</span></div>
+
+
+<div class="viewcode-block" id="RedisTaskQueue.get_task">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.get_task">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">once</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RedisTask</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get a task from Redis.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_id: The task ID.</span>
+<span class="sd">            once: Whether to delete the task after getting it.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The RedisTask, or None if no task is available.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">get</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">getdel</span> <span class="k">if</span> <span class="n">once</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">get</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_result_key</span><span class="p">(</span><span class="n">task_id</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">result</span><span class="p">))</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">_save</span> <span class="o">=</span> <span class="k">lambda</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_task</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">t</span></div>
+
+
+<div class="viewcode-block" id="RedisTaskQueue.has_task">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.has_task">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">has_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a task exists.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            task_id: The task ID.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the task exists, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_result_key</span><span class="p">(</span><span class="n">task_id</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span></div>
+
+
+    <span class="nd">@contextmanager</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_executor_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a ThreadPoolExecutor context manager.</span>
+
+<span class="sd">        This is a helper method for testing and internal use.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            max_workers: The maximum number of worker threads.</span>
+
+<span class="sd">        Yields:</span>
+<span class="sd">            The ThreadPoolExecutor instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">max_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">executor</span>
+
+<div class="viewcode-block" id="RedisTaskQueue.listen">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.listen">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">listen</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Event</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Listen for tasks on the specified queues.</span>
+
+<span class="sd">        This method continuously polls the specified queues for tasks,</span>
+<span class="sd">        and executes tasks locally when they are received.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            names: The names of the queues to listen to.</span>
+<span class="sd">            workers: The number of worker threads to use. Default is 128.</span>
+<span class="sd">            event: An event to signal when to stop listening. Default is None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_executor_context</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="k">while</span> <span class="n">event</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">event</span><span class="o">.</span><span class="n">is_set</span><span class="p">():</span>
+                <span class="n">queue_names</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_key</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">]</span>
+                <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">blpop</span><span class="p">(</span><span class="n">queue_names</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">interval</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">task</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">_queue_key</span><span class="p">,</span> <span class="n">task_id</span> <span class="o">=</span> <span class="n">task</span>
+                        <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_task</span><span class="p">(</span><span class="n">task_id</span><span class="p">)</span>
+                        <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">execute_task_locally</span><span class="p">,</span> <span class="n">task</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">break</span>
+                <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">set_queue_listened</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">interval</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisTaskQueue.query">
+<a class="viewcode-back" href="../../api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.query">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+              <span class="n">policy</span><span class="p">:</span> <span class="n">TaskExecutePolicy</span> <span class="o">=</span> <span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">Auto</span><span class="p">,</span> <span class="n">once</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Execute a task according to the specified policy.</span>
+
+<span class="sd">        This method provides a flexible way to execute tasks with different</span>
+<span class="sd">        strategies based on the specified policy.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            id: The task ID.</span>
+<span class="sd">            name: The task name.</span>
+<span class="sd">            params: The task parameters.</span>
+<span class="sd">            timeout: Optional timeout override.</span>
+<span class="sd">            policy: The execution policy to use.</span>
+<span class="sd">            once: Whether to delete the result after getting it.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The result of the task.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            Exception: Any exception raised during task execution.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_task</span><span class="p">(</span><span class="nb">id</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+        <span class="k">match</span> <span class="n">policy</span><span class="p">:</span>
+            <span class="k">case</span> <span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">Local</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_locally</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+            <span class="k">case</span> <span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">Remote</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_remotely</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="k">case</span> <span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">LocalFirst</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_locally</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Failed to execute task </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s1"> in </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> locally: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_remotely</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+            <span class="k">case</span> <span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">RemoteFirst</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_remotely</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Failed to execute task </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s1"> in </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> remotely: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_locally</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+            <span class="k">case</span> <span class="n">TaskExecutePolicy</span><span class="o">.</span><span class="n">Auto</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_queue_listen_name</span><span class="p">(</span><span class="n">name</span><span class="p">)):</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_remotely</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_task_locally</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2025, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

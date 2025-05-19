@@ -1,0 +1,1579 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>redis_allocator.allocator &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+      <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+      <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+      <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+      <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">redis_allocator.allocator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for redis_allocator.allocator</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Redis-based distributed memory allocation system.</span>
+
+<span class="sd">This module provides the core functionality of the RedisAllocator system,</span>
+<span class="sd">allowing for distributed memory allocation with support for garbage collection,</span>
+<span class="sd">thread health checking, and priority-based allocation mechanisms.</span>
+
+<span class="sd">Key features:</span>
+<span class="sd">1. Shared vs non-shared allocation modes:</span>
+<span class="sd">   - In shared mode, allocating an item simply removes it from the free list and puts it back to the tail</span>
+<span class="sd">   - In non-shared mode, allocation locks the item to prevent others from accessing it</span>
+<span class="sd">2. Garbage collection for stale/unhealthy items:</span>
+<span class="sd">   - Items that are locked (unhealthy) but in the free list are removed</span>
+<span class="sd">   - Items that are not in the free list but haven&#39;t been updated within their timeout are freed</span>
+<span class="sd">3. Soft binding mechanism:</span>
+<span class="sd">   - Maps object names to allocated keys for consistent allocation</span>
+<span class="sd">   - Prioritizes previously allocated keys when the same named object requests allocation</span>
+<span class="sd">4. Support for an updater to refresh the pool&#39;s keys periodically</span>
+<span class="sd">5. Policy-based control of allocation behavior through RedisAllocatorPolicy</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">atexit</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">weakref</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">TypeVar</span><span class="p">,</span> <span class="n">Generic</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Iterable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached_property</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="kn">import</span> <span class="n">current_thread</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrictRedis</span> <span class="k">as</span> <span class="n">Redis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">cachetools</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached</span><span class="p">,</span> <span class="n">TTLCache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.lock</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisLockPool</span><span class="p">,</span> <span class="n">Timeout</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="RedisThreadHealthCheckPool">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisThreadHealthCheckPool</span><span class="p">(</span><span class="n">RedisLockPool</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A class that provides a simple interface for managing the health status of a thread.</span>
+
+<span class="sd">    This class enables tracking the health status of threads in a distributed environment</span>
+<span class="sd">    using Redis locks.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisThreadHealthCheckPool.__init__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">redis</span><span class="p">:</span> <span class="n">Redis</span><span class="p">,</span> <span class="n">identity</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a RedisThreadHealthCheckPool instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            redis: The Redis client used for interacting with Redis.</span>
+<span class="sd">            identity: The identity prefix for the health checker.</span>
+<span class="sd">            timeout: The timeout for health checks in seconds.</span>
+<span class="sd">            tasks: A list of thread identifiers to track.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">redis</span><span class="p">,</span> <span class="n">identity</span><span class="p">,</span> <span class="s2">&quot;thread-health-check-pool&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">current_thread_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the current thread ID.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The current thread ID as a string.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">ident</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisThreadHealthCheckPool.initialize">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.initialize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the health status.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">current_thread_id</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="RedisThreadHealthCheckPool.update">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>  <span class="c1"># pylint: disable=arguments-differ</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the health status.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_thread_id</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisThreadHealthCheckPool.finalize">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.finalize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">finalize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Finalize the health status.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shrink</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">current_thread_id</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unlock</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_thread_id</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RedisAllocatableClass">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatableClass">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisAllocatableClass</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A class that can be allocated through RedisAllocator.</span>
+
+<span class="sd">    You should inherit from this class and implement the set_config method.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisAllocatableClass.set_config">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.set_config">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the configuration for the object.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: The key to set the configuration for.</span>
+<span class="sd">            params: The parameters to set the configuration for.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatableClass.open">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.open">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">open</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Open the object.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatableClass.close">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.close">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;close the object.&quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatableClass.is_healthy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.is_healthy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_healthy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the cache name of the object, if is none no soft binding will be used.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unique_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the unique ID of the object.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
+
+
+
+<span class="n">U</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s1">&#39;U&#39;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="n">RedisAllocatableClass</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisAllocatorObject</span><span class="p">(</span><span class="n">Generic</span><span class="p">[</span><span class="n">U</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Represents an object allocated through RedisAllocator.</span>
+
+<span class="sd">    This class provides an interface for working with allocated objects</span>
+<span class="sd">    including locking and unlocking mechanisms for thread-safe operations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator&#39;</span>  <span class="c1"># Reference to the allocator that created this object</span>
+    <span class="n">key</span><span class="p">:</span> <span class="nb">str</span>                      <span class="c1"># Redis key for this allocated object</span>
+    <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>        <span class="c1"># Parameters associated with this object</span>
+    <span class="n">obj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">U</span><span class="p">]</span>              <span class="c1"># The actual object being allocated</span>
+
+<div class="viewcode-block" id="RedisAllocatorObject.__init__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">U</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize a RedisAllocatorObject instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator that created this object</span>
+<span class="sd">            key: The Redis key for this allocated object</span>
+<span class="sd">            obj: The actual object being allocated</span>
+<span class="sd">            params: Additional parameters passed by local program</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span> <span class="o">=</span> <span class="n">allocator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="o">=</span> <span class="n">obj</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="n">params</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">set_config</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.update">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.update">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Lock this object for exclusive access.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            timeout: How long the lock should be valid (in seconds)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">timeout</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.open">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.open">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">open</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Open the object.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.close">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.close">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Kill the object.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.is_healthy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.is_healthy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_healthy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if the object is healthy.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">is_healthy</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.set_healthy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.set_healthy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_healthy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">duration</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the object as healthy.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">update_soft_bind</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">duration</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">shared</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">unlock</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.set_unhealthy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.set_unhealthy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_unhealthy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">duration</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the object as unhealthy.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">unbind_soft_bind</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">duration</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.refresh">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.refresh">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span> <span class="n">cache_timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh the object.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">new_obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">malloc</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">allocator</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span>
+                                               <span class="n">obj</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">,</span>
+                                               <span class="n">cache_timeout</span><span class="o">=</span><span class="n">cache_timeout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">new_obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="o">=</span> <span class="n">new_obj</span><span class="o">.</span><span class="n">obj</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">new_obj</span><span class="o">.</span><span class="n">key</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="n">new_obj</span><span class="o">.</span><span class="n">params</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to refresh the object </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorObject.refresh_until_healthy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.refresh_until_healthy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh_until_healthy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span> <span class="n">max_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">lock_duration</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">,</span> <span class="n">cache_timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh the object until it is healthy.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_attempts</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_healthy</span><span class="p">():</span>
+                    <span class="k">return</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error checking health of </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_unhealthy</span><span class="p">(</span><span class="n">lock_duration</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="n">cache_timeout</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;the objects is still unhealthy after </span><span class="si">%d</span><span class="s2"> attempts&quot;</span><span class="p">,</span> <span class="n">max_attempts</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unique_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the unique ID of the object.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">unique_id</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the name of the object.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">name</span></div>
+
+
+    <span class="c1"># def __del__(self):</span>
+    <span class="c1">#     &quot;&quot;&quot;Delete the object.&quot;&quot;&quot;</span>
+    <span class="c1">#     self.close()</span>
+
+
+<div class="viewcode-block" id="RedisAllocatorUpdater">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisAllocatorUpdater</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A class that updates the allocator keys.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisAllocatorUpdater.__init__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the allocator updater.&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;params should not be empty&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="n">params</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorUpdater.fetch">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.fetch">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fetch the keys from params.&quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorUpdater.__call__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.__call__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the allocator key.&quot;&quot;&quot;</span>
+        <span class="n">current_param</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">)</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">current_param</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">keys</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorUpdater.__len__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.__len__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the length of the allocator updater.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RedisAllocatorPolicy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisAllocatorPolicy</span><span class="p">(</span><span class="n">ABC</span><span class="p">,</span> <span class="n">Generic</span><span class="p">[</span><span class="n">U</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class for Redis allocator policies.</span>
+
+<span class="sd">    This class defines the interface for allocation policies that can be used</span>
+<span class="sd">    with RedisAllocator to control allocation behavior.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisAllocatorPolicy.initialize">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.initialize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the policy with an allocator instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance to use with this policy</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorPolicy.malloc">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.malloc">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">malloc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span>
+               <span class="n">obj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">U</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+               <span class="n">cache_timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RedisAllocatorObject</span><span class="p">[</span><span class="n">U</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allocate a resource according to the policy.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance</span>
+<span class="sd">            timeout: How long the allocation should be valid (in seconds)</span>
+<span class="sd">            obj: The object to associate with the allocation</span>
+<span class="sd">            params: Additional parameters for the allocation</span>
+<span class="sd">            cache_timeout: Timeout for the soft binding cache entry (seconds).</span>
+<span class="sd">                       Defaults to 3600.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            RedisAllocatorObject if allocation was successful, None otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorPolicy.refresh_pool">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.refresh_pool">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh_pool</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh the allocation pool.</span>
+
+<span class="sd">        This method is called periodically to update the pool with new resources.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorPolicy.refresh_pool_all">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.refresh_pool_all">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh_pool_all</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh the allocation pool.&quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorPolicy.check_health_once">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.check_health_once">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_health_once</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">r_obj</span><span class="p">:</span> <span class="n">RedisAllocatorObject</span><span class="p">[</span><span class="n">U</span><span class="p">],</span> <span class="n">duration</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check the health of the object.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">closing</span><span class="p">(</span><span class="n">r_obj</span><span class="o">.</span><span class="n">open</span><span class="p">()):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">r_obj</span><span class="o">.</span><span class="n">is_healthy</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="n">r_obj</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">shared</span><span class="p">:</span>
+                        <span class="n">r_obj</span><span class="o">.</span><span class="n">allocator</span><span class="o">.</span><span class="n">unlock</span><span class="p">(</span><span class="n">r_obj</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>  <span class="c1"># set the key as free</span>
+                    <span class="k">return</span> <span class="kc">True</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">r_obj</span><span class="o">.</span><span class="n">set_unhealthy</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="kc">False</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error checking health of </span><span class="si">{</span><span class="n">r_obj</span><span class="o">.</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">r_obj</span><span class="o">.</span><span class="n">set_unhealthy</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>
+                <span class="k">raise</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocatorPolicy.check_health">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.check_health">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_health</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">,</span> <span class="n">lock_duration</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">,</span> <span class="n">max_threads</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+                     <span class="n">obj_fn</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="nb">str</span><span class="p">],</span> <span class="n">U</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                     <span class="n">params_fn</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">dict</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check the health of the allocator.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance</span>
+<span class="sd">            lock_duration: The duration of the lock (in seconds)</span>
+<span class="sd">            max_threads: The maximum number of threads to use</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A tuple containing the number of healthy and unhealthy items in the allocator</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">max_threads</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="n">inputs</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">allocator</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">params_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">params</span> <span class="o">=</span> <span class="n">params_fn</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">params</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">obj_fn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">obj</span> <span class="o">=</span> <span class="n">obj_fn</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">obj</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">inputs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">RedisAllocatorObject</span><span class="p">(</span><span class="n">allocator</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">params</span><span class="p">))</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">check_health_once</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">lock_duration</span><span class="p">))</span>
+            <span class="n">healthy</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+            <span class="n">unhealthy</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">results</span><span class="p">)</span> <span class="o">-</span> <span class="n">healthy</span>
+            <span class="k">return</span> <span class="n">healthy</span><span class="p">,</span> <span class="n">unhealthy</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DefaultRedisAllocatorPolicy</span><span class="p">(</span><span class="n">RedisAllocatorPolicy</span><span class="p">[</span><span class="n">U</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Default implementation of RedisAllocatorPolicy.</span>
+
+<span class="sd">    This policy provides the following features:</span>
+<span class="sd">    1. Garbage collection before allocation: Automatically performs garbage collection</span>
+<span class="sd">       operations before allocating resources to ensure stale resources are reclaimed.</span>
+
+<span class="sd">    2. Soft binding prioritization: Prioritizes allocation of previously bound keys</span>
+<span class="sd">       for named objects, creating a consistent mapping between object names and keys.</span>
+<span class="sd">       If a soft binding exists but the bound key is no longer in the pool, the binding is</span>
+<span class="sd">       ignored and a new key is allocated.</span>
+
+<span class="sd">    3. Periodic pool updates: Uses an optional updater to refresh the pool&#39;s keys at</span>
+<span class="sd">       configurable intervals. Only one process/thread (the one that acquires the update lock)</span>
+<span class="sd">       will perform the update.</span>
+
+<span class="sd">    4. Configurable expiry times: Allows setting default expiry durations for pool items,</span>
+<span class="sd">       ensuring automatic cleanup of stale resources even without explicit garbage collection.</span>
+
+<span class="sd">    The policy controls when garbage collection happens, when the pool is refreshed with new keys,</span>
+<span class="sd">    and how allocation prioritizes resources.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy.__init__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gc_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="n">update_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">300</span><span class="p">,</span>
+                 <span class="n">expiry_duration</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">updater</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RedisAllocatorUpdater</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">auto_close</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the default allocation policy.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            gc_count: Number of GC operations to perform before allocation</span>
+<span class="sd">            update_interval: Interval in seconds between pool updates</span>
+<span class="sd">            expiry_duration: Default timeout for pool items (-1 means no timeout)</span>
+<span class="sd">            updater: Optional updater for refreshing the pool&#39;s keys</span>
+<span class="sd">            auto_close: If True, the allocator will automatically close the object when it is not unique</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gc_count</span> <span class="o">=</span> <span class="n">gc_count</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_interval</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">update_interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expiry_duration</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">expiry_duration</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">updater</span> <span class="o">=</span> <span class="n">updater</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">weakref</span><span class="o">.</span><span class="n">ReferenceType</span><span class="p">[</span><span class="s1">&#39;RedisAllocator&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_lock_key</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">:</span> <span class="n">weakref</span><span class="o">.</span><span class="n">WeakValueDictionary</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">RedisAllocatorObject</span><span class="p">]</span> <span class="o">=</span> <span class="n">weakref</span><span class="o">.</span><span class="n">WeakValueDictionary</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">auto_close</span> <span class="o">=</span> <span class="n">auto_close</span></div>
+
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy.initialize">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.initialize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the policy with an allocator instance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance to use with this policy</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_allocator</span> <span class="o">=</span> <span class="n">weakref</span><span class="o">.</span><span class="n">ref</span><span class="p">(</span><span class="n">allocator</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_lock_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">allocator</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">()</span><span class="si">}</span><span class="s2">|policy_update_lock&quot;</span>
+        <span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_allocator</span><span class="p">()))</span></div>
+
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy.refresh_pool_all">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.refresh_pool_all">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh_pool_all</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+        <span class="n">allocator</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh_pool</span><span class="p">(</span><span class="n">allocator</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">updater</span><span class="o">.</span><span class="n">params</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy.malloc">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.malloc">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">malloc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span>
+               <span class="n">obj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">U</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+               <span class="n">cache_timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RedisAllocatorObject</span><span class="p">[</span><span class="n">U</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allocate a resource according to the policy.</span>
+
+<span class="sd">        This implementation:</span>
+<span class="sd">        1. Performs GC operations before allocation</span>
+<span class="sd">        2. Checks for soft binding based on object name</span>
+<span class="sd">        3. Falls back to regular allocation if no soft binding exists</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance</span>
+<span class="sd">            timeout: How long the allocation should be valid (in seconds)</span>
+<span class="sd">            obj: The object to associate with the allocation</span>
+<span class="sd">            params: Additional parameters for the allocation</span>
+<span class="sd">            cache_timeout: Timeout for the soft binding cache entry (seconds).</span>
+<span class="sd">                       Defaults to 3600.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            RedisAllocatorObject if allocation was successful, None otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Try to refresh the pool if necessary</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_try_refresh_pool</span><span class="p">(</span><span class="n">allocator</span><span class="p">)</span>
+
+        <span class="c1"># Perform GC operations before allocation</span>
+        <span class="n">allocator</span><span class="o">.</span><span class="n">gc</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gc_count</span><span class="p">)</span>
+
+        <span class="c1"># Fall back to regular allocation</span>
+        <span class="c1"># Explicitly call obj.name if obj exists</span>
+        <span class="n">obj_name</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">callable</span><span class="p">(</span>
+            <span class="n">obj</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">allocator</span><span class="o">.</span><span class="n">malloc_key</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="n">obj_name</span><span class="p">,</span>
+                                   <span class="n">cache_timeout</span><span class="o">=</span><span class="n">cache_timeout</span><span class="p">)</span>
+        <span class="n">alloc_obj</span> <span class="o">=</span> <span class="n">RedisAllocatorObject</span><span class="p">(</span><span class="n">allocator</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">auto_close</span><span class="p">:</span>
+            <span class="n">old_obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">alloc_obj</span><span class="o">.</span><span class="n">unique_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">old_obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">old_obj</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">alloc_obj</span><span class="o">.</span><span class="n">unique_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">alloc_obj</span>
+        <span class="k">return</span> <span class="n">alloc_obj</span></div>
+
+
+    <span class="nd">@cached</span><span class="p">(</span><span class="n">TTLCache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_try_refresh_pool</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Try to refresh the pool if necessary and if we can acquire the lock.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">updater</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">allocator</span><span class="o">.</span><span class="n">lock</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_update_lock_key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">update_interval</span><span class="p">):</span>
+            <span class="c1"># If we got here, we acquired the lock, so we can update the pool</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">refresh_pool</span><span class="p">(</span><span class="n">allocator</span><span class="p">)</span>
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy.refresh_pool">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.refresh_pool">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh_pool</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Refresh the allocation pool using the updater.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            allocator: The RedisAllocator instance</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">updater</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">keys</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+            <span class="n">keys</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">updater</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;No keys to update to the pool&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">shuffle</span><span class="p">:</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span>
+
+        <span class="c1"># Update the pool based on the number of keys</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">updater</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">allocator</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">expiry_duration</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">allocator</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">expiry_duration</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DefaultRedisAllocatorPolicy.finalize">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.finalize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">finalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allocator</span><span class="p">:</span> <span class="s1">&#39;RedisAllocator[U]&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Finalize the policy.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">obj</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RedisAllocator">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RedisAllocator</span><span class="p">(</span><span class="n">RedisLockPool</span><span class="p">,</span> <span class="n">Generic</span><span class="p">[</span><span class="n">U</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A Redis-based distributed allocation system.</span>
+
+<span class="sd">    Manages a pool of resource identifiers (keys) using Redis, allowing distributed</span>
+<span class="sd">    clients to allocate, free, and manage these resources. It leverages Redis&#39;s</span>
+<span class="sd">    atomic operations via Lua scripts for safe concurrent access.</span>
+
+<span class="sd">    The allocator maintains a doubly-linked list in a Redis hash to track available</span>
+<span class="sd">    (free) resources. Allocated resources are tracked using standard Redis keys</span>
+<span class="sd">    that act as locks.</span>
+
+<span class="sd">    Key Concepts:</span>
+<span class="sd">    - Allocation Pool: A set of resource identifiers (keys) managed by the allocator.</span>
+<span class="sd">      Stored in a Redis hash (`&lt;prefix&gt;|&lt;suffix&gt;|pool`) representing a doubly-linked list.</span>
+<span class="sd">      Head/Tail pointers are stored in separate keys (`&lt;prefix&gt;|&lt;suffix&gt;|pool|head`,</span>
+<span class="sd">      `&lt;prefix&gt;|&lt;suffix&gt;|pool|tail`).</span>
+<span class="sd">    - Free List: The subset of keys within the pool that are currently available.</span>
+<span class="sd">      Represented by the linked list structure within the pool hash.</span>
+<span class="sd">    - Allocated State: A key is considered allocated if a corresponding lock key exists</span>
+<span class="sd">      (`&lt;prefix&gt;|&lt;suffix&gt;:&lt;key&gt;`).</span>
+<span class="sd">    - Shared Mode: If `shared=True`, allocating a key moves it to the tail of the</span>
+<span class="sd">      free list but does *not* create a lock key. This allows multiple clients to</span>
+<span class="sd">      &quot;allocate&quot; the same key concurrently, effectively using the list as a rotating pool.</span>
+<span class="sd">      If `shared=False` (default), allocation creates a lock key, granting exclusive access.</span>
+<span class="sd">    - Soft Binding: Allows associating a logical name with an allocated key. If an object</span>
+<span class="sd">      provides a `name`, the allocator tries to reuse the previously bound key for that name.</span>
+<span class="sd">      Stored in Redis keys like `&lt;prefix&gt;|&lt;suffix&gt;-cache:bind:&lt;name&gt;`.</span>
+<span class="sd">    - Garbage Collection (GC): Periodically scans the pool to reconcile the free list</span>
+<span class="sd">      with the lock states. Removes expired/locked items from the free list and returns</span>
+<span class="sd">      items whose locks have expired back to the free list.</span>
+<span class="sd">    - Policies: Uses `RedisAllocatorPolicy` (e.g., `DefaultRedisAllocatorPolicy`)</span>
+<span class="sd">      to customize allocation behavior, GC triggering, and pool updates.</span>
+
+<span class="sd">    Generic type U should implement `RedisAllocatableClass`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="RedisAllocator.__init__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">redis</span><span class="p">:</span> <span class="n">Redis</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;allocator&#39;</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span>
+                 <span class="n">shared</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">policy</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RedisAllocatorPolicy</span><span class="p">[</span><span class="n">U</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the RedisAllocator.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            redis: StrictRedis client instance (must decode responses).</span>
+<span class="sd">            prefix: Prefix for all Redis keys used by this allocator instance.</span>
+<span class="sd">            suffix: Suffix to uniquely identify this allocator instance&#39;s keys.</span>
+<span class="sd">            eps: Small float tolerance for comparisons (used by underlying lock).</span>
+<span class="sd">            shared: If True, operates in shared mode (keys are rotated, not locked).</span>
+<span class="sd">                    If False (default), keys are locked upon allocation.</span>
+<span class="sd">            policy: Optional allocation policy. Defaults to `DefaultRedisAllocatorPolicy`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">redis</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="n">suffix</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="n">eps</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shared</span> <span class="o">=</span> <span class="n">shared</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">policy</span> <span class="o">=</span> <span class="n">policy</span> <span class="ow">or</span> <span class="n">DefaultRedisAllocatorPolicy</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.object_key">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.object_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">object_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">U</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the key for an object.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">shared</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">key</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">:</span><span class="si">{</span><span class="n">obj</span><span class="si">}</span><span class="s1">&#39;</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pool_pointer_str</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">head</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the Redis key for the head or tail pointer of the allocation pool.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            head: If True, get the head pointer key; otherwise, get the tail pointer key</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            String representation of the Redis key for the pointer</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pointer_type</span> <span class="o">=</span> <span class="s1">&#39;head&#39;</span> <span class="k">if</span> <span class="n">head</span> <span class="k">else</span> <span class="s1">&#39;tail&#39;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">()</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="n">pointer_type</span><span class="si">}</span><span class="s1">&#39;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_lua_required_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Base Lua script providing common functions for pool manipulation.</span>
+
+<span class="sd">        Includes functions inherited from RedisLockPool and adds allocator-specific ones:</span>
+<span class="sd">        - pool_pointer_str(head: bool): Returns the Redis key for the head/tail pointer.</span>
+<span class="sd">        - cache_str(): Returns the Redis key for the allocator&#39;s general cache.</span>
+<span class="sd">        - soft_bind_name(name: str): Returns the Redis key for a specific soft binding.</span>
+<span class="sd">        - split_pool_value(value: str): Parses the &#39;prev||next||expiry&#39; string stored</span>
+<span class="sd">                                        in the pool hash for a key.</span>
+<span class="sd">        - join_pool_value(prev: str, next: str, expiry: int): Creates the value string.</span>
+<span class="sd">        - timeout_to_expiry(timeout: int): Converts relative seconds to absolute Unix timestamp.</span>
+<span class="sd">        - is_expiry_invalid(expiry: int): Checks if an absolute expiry time is in the past.</span>
+<span class="sd">        - is_expired(value: str): Checks if a pool item&#39;s expiry is in the past.</span>
+<span class="sd">        - push_to_tail(itemName: str, expiry: int): Adds/updates an item at the tail of the free list.</span>
+<span class="sd">        - pop_from_head(): Removes and returns the item from the head of the free list,</span>
+<span class="sd">                           skipping expired or locked items. Returns (nil, -1) if empty.</span>
+<span class="sd">        - set_item_allocated(itemName: str): Removes an item from the free list structure.</span>
+<span class="sd">        - check_item_health(itemName: str, value: str|nil): Core GC logic for a single item.</span>
+<span class="sd">            - If item is marked #ALLOCATED but has no lock -&gt; push to tail (return to free list).</span>
+<span class="sd">            - If item is in free list but expired -&gt; remove from pool hash.</span>
+<span class="sd">            - If item is in free list but locked -&gt; mark as #ALLOCATED (remove from free list).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local function time()</span>
+<span class="s1">            return tonumber(redis.call(&quot;TIME&quot;)[1])</span>
+<span class="s1">        end</span>
+<span class="s1">        local function pool_pointer_str(head)</span>
+<span class="s1">            local pointer_type = &#39;head&#39;</span>
+<span class="s1">            if not head then</span>
+<span class="s1">                pointer_type = &#39;tail&#39;</span>
+<span class="s1">            end</span>
+<span class="s1">            return &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">()</span><span class="si">}</span><span class="s1">|&#39; .. pointer_type</span>
+<span class="s1">        end</span>
+<span class="s1">        local function cache_str()</span>
+<span class="s1">            return &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache_str</span><span class="si">}</span><span class="s1">&#39;</span>
+<span class="s1">        end</span>
+<span class="s1">        local function soft_bind_name(name)</span>
+<span class="s1">            if name == &quot;&quot; or not name then</span>
+<span class="s1">                return &quot;&quot;</span>
+<span class="s1">            end</span>
+<span class="s1">            return cache_str() .. &#39;:bind:&#39; .. name</span>
+<span class="s1">        end</span>
+<span class="s1">        local function split_pool_value(value)</span>
+<span class="s1">            if not value or value == &quot;&quot; then</span>
+<span class="s1">                return &quot;&quot;, &quot;&quot;, -1</span>
+<span class="s1">            end</span>
+<span class="s1">            value = tostring(value)</span>
+<span class="s1">            local prev, next, expiry = string.match(value, &quot;(.*)||(.*)||(.*)&quot;)</span>
+<span class="s1">            return prev, next, tonumber(expiry)</span>
+<span class="s1">        end</span>
+<span class="s1">        local function join_pool_value(prev, next, expiry)</span>
+<span class="s1">            if expiry == nil then</span>
+<span class="s1">                expiry = -1</span>
+<span class="s1">            end</span>
+<span class="s1">            return tostring(prev) .. &quot;||&quot; .. tostring(next) .. &quot;||&quot; .. tostring(expiry)</span>
+<span class="s1">        end</span>
+<span class="s1">        local function timeout_to_expiry(timeout)</span>
+<span class="s1">            if timeout == nil or timeout &lt;= 0 then</span>
+<span class="s1">                return -1</span>
+<span class="s1">            end</span>
+<span class="s1">            return time() + timeout</span>
+<span class="s1">        end</span>
+<span class="s1">        local function is_expiry_invalid(expiry)</span>
+<span class="s1">            return expiry ~= nil and expiry &gt; 0 and expiry &lt;= time()</span>
+<span class="s1">        end</span>
+<span class="s1">        local function is_expired(value)</span>
+<span class="s1">            local _, _, expiry = split_pool_value(value)</span>
+<span class="s1">            return is_expiry_invalid(expiry)</span>
+<span class="s1">        end</span>
+<span class="s1">        local poolItemsKey = pool_str()</span>
+<span class="s1">        local headKey      = pool_pointer_str(true)</span>
+<span class="s1">        local tailKey      = pool_pointer_str(false)</span>
+<span class="s1">        local function current_pointer(pointerKey)</span>
+<span class="s1">            local pointer = redis.call(&quot;GET&quot;, pointerKey)</span>
+<span class="s1">            if not pointer then</span>
+<span class="s1">                return &quot;&quot;</span>
+<span class="s1">            end</span>
+<span class="s1">            return pointer</span>
+<span class="s1">        end</span>
+<span class="s1">        local function current_head()</span>
+<span class="s1">            return current_pointer(headKey)</span>
+<span class="s1">        end</span>
+<span class="s1">        local function current_tail()</span>
+<span class="s1">            return current_pointer(tailKey)</span>
+<span class="s1">        end</span>
+<span class="s1">        local function set_current_head(pointer)</span>
+<span class="s1">            redis.call(&quot;SET&quot;, headKey, pointer)</span>
+<span class="s1">        end</span>
+<span class="s1">        local function set_current_tail(pointer)</span>
+<span class="s1">            redis.call(&quot;SET&quot;, tailKey, pointer)</span>
+<span class="s1">        end</span>
+
+<span class="s1">        local function push_to_tail(itemName, expiry)  -- push the item to the free list, item should not be in the free list</span>
+<span class="s1">            local head = current_head()</span>
+<span class="s1">            local tail = current_tail()</span>
+<span class="s1">            ---- this is the debug code</span>
+<span class="s1">            local itemVal = redis.call(&quot;HGET&quot;, poolItemsKey, itemName)</span>
+<span class="s1">            if itemVal then</span>
+<span class="s1">                local prev, next, expiry = split_pool_value(itemVal)</span>
+<span class="s1">                assert(prev == &quot;#ALLOCATED&quot; or prev == &quot;&quot;, &quot;item should be allocated or free&quot;)</span>
+<span class="s1">                assert(next == &quot;&quot; or next == &quot;#ALLOCATED&quot;, &quot;item should be the last item in the free list&quot;)</span>
+<span class="s1">            end</span>
+<span class="s1">            -- set the item points to the tail</span>
+<span class="s1">            redis.call(&quot;HSET&quot;, poolItemsKey, itemName, join_pool_value(tail, &quot;&quot;, expiry))</span>
+<span class="s1">            if tail == &quot;&quot; or head == &quot;&quot; then  -- the free list is empty chain</span>
+<span class="s1">                -- assert(tail == &quot;&quot; and head == &quot;&quot;, &quot;head or tail should not be empty&quot;)</span>
+<span class="s1">                set_current_head(itemName)</span>
+<span class="s1">            else</span>
+<span class="s1">                local tailVal = redis.call(&quot;HGET&quot;, poolItemsKey, tail)</span>
+<span class="s1">                assert(tailVal, &quot;tail value should not be nil&quot;)</span>
+<span class="s1">                local tailPrev, tailNext, tailExpiry = split_pool_value(tailVal)</span>
+<span class="s1">                assert(tailNext == &quot;&quot;, &quot;tail should be the last item in the free list&quot;)</span>
+<span class="s1">                redis.call(&quot;HSET&quot;, poolItemsKey, tail, join_pool_value(tailPrev, itemName, tailExpiry))</span>
+<span class="s1">            end</span>
+<span class="s1">            set_current_tail(itemName)</span>
+<span class="s1">        end</span>
+
+<span class="s1">        -- Ensure the new head node is well-formed (prev=&quot;&quot;) and update tail/head</span>
+<span class="s1">        local function set_item_head_nil(nextItemName)</span>
+<span class="s1">            if nextItemName == &quot;&quot; then</span>
+<span class="s1">                -- list becomes empty</span>
+<span class="s1">                redis.call(&quot;SET&quot;, headKey, &quot;&quot;)</span>
+<span class="s1">                redis.call(&quot;SET&quot;, tailKey, &quot;&quot;)</span>
+<span class="s1">                return</span>
+<span class="s1">            end</span>
+
+<span class="s1">            local nextVal = redis.call(&quot;HGET&quot;, poolItemsKey, nextItemName)</span>
+<span class="s1">            if not nextVal then</span>
+<span class="s1">                -- corrupted pointer, clear list</span>
+<span class="s1">                redis.call(&quot;SET&quot;, headKey, &quot;&quot;)</span>
+<span class="s1">                redis.call(&quot;SET&quot;, tailKey, &quot;&quot;)</span>
+<span class="s1">                return</span>
+<span class="s1">            end</span>
+
+<span class="s1">            local _prev, nextNext, nextExpiry = split_pool_value(nextVal)</span>
+<span class="s1">            if _prev ~= &quot;&quot; then</span>
+<span class="s1">                redis.call(&quot;HSET&quot;, poolItemsKey, nextItemName, join_pool_value(&quot;&quot;, nextNext, nextExpiry))</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+
+<span class="s1">        local function pop_from_head()  -- pop the item from the free list</span>
+<span class="s1">            local head = current_head()</span>
+<span class="s1">            if not head or head == &quot;&quot; then  -- the free list is empty</span>
+<span class="s1">                return nil, -1</span>
+<span class="s1">            end</span>
+<span class="s1">            local headVal = redis.call(&quot;HGET&quot;, poolItemsKey, head)</span>
+<span class="s1">            assert(headVal, &quot;head value should not be nil&quot;)</span>
+<span class="s1">            local headPrev, headNext, headExpiry = split_pool_value(headVal)</span>
+<span class="s1">            -- Check if the head item has expired or is locked</span>
+<span class="s1">            if is_expiry_invalid(headExpiry) then  -- the item has expired</span>
+<span class="s1">                redis.call(&quot;HDEL&quot;, poolItemsKey, head)</span>
+<span class="s1">                set_current_head(headNext)</span>
+<span class="s1">                -- set_item_head_nil(headNext)</span>
+<span class="s1">                return pop_from_head()</span>
+<span class="s1">            elseif redis.call(&quot;EXISTS&quot;, key_str(head)) &gt; 0 then  -- the item is locked</span>
+<span class="s1">                redis.call(&quot;HSET&quot;, poolItemsKey, head, join_pool_value(&quot;#ALLOCATED&quot;, &quot;#ALLOCATED&quot;, headExpiry))</span>
+<span class="s1">                set_current_head(headNext)</span>
+<span class="s1">                -- set_item_head_nil(headNext)</span>
+<span class="s1">                return pop_from_head()</span>
+<span class="s1">            elseif headNext == &quot;&quot; then  -- the item is the last in the free list</span>
+<span class="s1">                redis.call(&quot;SET&quot;, headKey, &quot;&quot;)</span>
+<span class="s1">                redis.call(&quot;SET&quot;, tailKey, &quot;&quot;)</span>
+<span class="s1">            else</span>
+<span class="s1">                local nextVal = redis.call(&quot;HGET&quot;, poolItemsKey, headNext)</span>
+<span class="s1">                assert(nextVal, &quot;next value should not be nil&quot;)</span>
+<span class="s1">                local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)</span>
+<span class="s1">                redis.call(&quot;HSET&quot;, poolItemsKey, headNext, join_pool_value(&quot;&quot;, nextNext, nextExpiry))</span>
+<span class="s1">                redis.call(&quot;SET&quot;, headKey, headNext)</span>
+<span class="s1">            end</span>
+<span class="s1">            redis.call(&quot;HSET&quot;, poolItemsKey, head, join_pool_value(&quot;#ALLOCATED&quot;, &quot;#ALLOCATED&quot;, headExpiry))</span>
+<span class="s1">            return head, headExpiry</span>
+<span class="s1">        end</span>
+
+<span class="s1">        local function set_item_allocated(itemName, val)</span>
+<span class="s1">            if not val then</span>
+<span class="s1">                val = redis.call(&quot;HGET&quot;, pool_str(), itemName)</span>
+<span class="s1">            end</span>
+<span class="s1">            assert(val, &quot;val should not be nil&quot;)</span>
+<span class="s1">            local prev, next, expiry = split_pool_value(val)</span>
+<span class="s1">            if prev ~= &quot;#ALLOCATED&quot; then</span>
+<span class="s1">                assert(next ~= &quot;#ALLOCATED&quot;, &quot;next item should not be allocated&quot;)</span>
+<span class="s1">                if is_expiry_invalid(expiry) then</span>
+<span class="s1">                    redis.call(&quot;HDEL&quot;, poolItemsKey, itemName)</span>
+<span class="s1">                end</span>
+<span class="s1">                if prev ~= &quot;&quot; then</span>
+<span class="s1">                    local prevVal = redis.call(&quot;HGET&quot;, poolItemsKey, prev)</span>
+<span class="s1">                    assert(prevVal, &quot;prev value should not be nil&quot;, prev, prevVal)</span>
+<span class="s1">                    local prevPrev, prevNext, prevExpiry = split_pool_value(prevVal)</span>
+<span class="s1">                    redis.call(&quot;HSET&quot;, poolItemsKey, prev, join_pool_value(prevPrev, next, prevExpiry))</span>
+<span class="s1">                else</span>
+<span class="s1">                    redis.call(&quot;SET&quot;, headKey, next)</span>
+<span class="s1">                end</span>
+<span class="s1">                if next ~= &quot;&quot; then</span>
+<span class="s1">                    local nextVal = redis.call(&quot;HGET&quot;, poolItemsKey, next)</span>
+<span class="s1">                    assert(nextVal, &quot;next value should not be nil&quot;)</span>
+<span class="s1">                    local nextPrev, nextNext, nextExpiry = split_pool_value(nextVal)</span>
+<span class="s1">                    redis.call(&quot;HSET&quot;, poolItemsKey, next, join_pool_value(prev, nextNext, nextExpiry))</span>
+<span class="s1">                else</span>
+<span class="s1">                    redis.call(&quot;SET&quot;, tailKey, prev)</span>
+<span class="s1">                end</span>
+<span class="s1">                redis.call(&quot;HSET&quot;, poolItemsKey, itemName, join_pool_value(&quot;#ALLOCATED&quot;, &quot;#ALLOCATED&quot;, expiry))</span>
+<span class="s1">                -- If we removed the current head, update head pointer</span>
+<span class="s1">                -- local savedHead = redis.call(&quot;GET&quot;, headKey)</span>
+<span class="s1">                -- if savedHead == itemName then</span>
+<span class="s1">                --     redis.call(&quot;SET&quot;, headKey, next or &quot;&quot;)</span>
+<span class="s1">                -- end</span>
+<span class="s1">            else</span>
+<span class="s1">                assert(next == &quot;#ALLOCATED&quot;, &quot;next item should also be allocated&quot;)</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+
+<span class="s1">        local function check_item_health(itemName)</span>
+<span class="s1">            local value = redis.call(&quot;HGET&quot;, pool_str(), itemName)</span>
+<span class="s1">            assert(value, &quot;value should not be nil&quot;)</span>
+<span class="s1">            local prev, next, expiry = split_pool_value(value)</span>
+<span class="s1">            if is_expiry_invalid(expiry) then  -- Check if the item has expired</span>
+<span class="s1">                set_item_allocated(itemName, value)</span>
+<span class="s1">                redis.call(&quot;HDEL&quot;, poolItemsKey, itemName)</span>
+<span class="s1">                return</span>
+<span class="s1">            end</span>
+<span class="s1">            local locked = redis.call(&quot;EXISTS&quot;, key_str(itemName)) &gt; 0</span>
+<span class="s1">            if prev == &quot;#ALLOCATED&quot; then</span>
+<span class="s1">                if not locked then</span>
+<span class="s1">                    push_to_tail(itemName, expiry)</span>
+<span class="s1">                end</span>
+<span class="s1">            else</span>
+<span class="s1">                -- if locked then</span>
+<span class="s1">                --     set_item_allocated(itemName, value)</span>
+<span class="s1">                -- end</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+
+<span class="s1">        -- Return an array of item names in the free list order (head -&gt; tail)</span>
+<span class="s1">        -- Does NOT modify the list. Uses a bounded loop (at most pool size)</span>
+<span class="s1">        -- to avoid infinite traversal when the list structure is corrupted.</span>
+<span class="s1">        local function get_free_list()</span>
+<span class="s1">            local items = </span><span class="se">{{}}</span>
+<span class="s1">            local current = redis.call(&quot;GET&quot;, headKey)</span>
+<span class="s1">            if not current or current == &quot;&quot; then</span>
+<span class="s1">                return items  -- empty list</span>
+<span class="s1">            end</span>
+<span class="s1">            local max_iters = tonumber(redis.call(&quot;HLEN&quot;, poolItemsKey))</span>
+<span class="s1">            if not max_iters or max_iters &lt;= 0 then</span>
+<span class="s1">                return items</span>
+<span class="s1">            end</span>
+<span class="s1">            for i = 1, max_iters do</span>
+<span class="s1">                if not current or current == &quot;&quot; then</span>
+<span class="s1">                    break</span>
+<span class="s1">                end</span>
+<span class="s1">                table.insert(items, current)</span>
+<span class="s1">                local val = redis.call(&quot;HGET&quot;, poolItemsKey, current)</span>
+<span class="s1">                if not val then</span>
+<span class="s1">                    break  -- corrupted pointer</span>
+<span class="s1">                end</span>
+<span class="s1">                local _prev, nxt, _expiry = split_pool_value(val)</span>
+<span class="s1">                if nxt == &quot;&quot; or nxt == &quot;#ALLOCATED&quot; then</span>
+<span class="s1">                    break -- reached tail or allocated marker</span>
+<span class="s1">                end</span>
+<span class="s1">                current = nxt</span>
+<span class="s1">            end</span>
+<span class="s1">            return items</span>
+<span class="s1">        end</span>
+<span class="s1">        &#39;&#39;&#39;</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_clear_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        redis.call(&quot;DEL&quot;, poolItemsKey)</span>
+<span class="s1">        redis.call(&quot;SET&quot;, headKey, &quot;&quot;)</span>
+<span class="s1">        redis.call(&quot;SET&quot;, tailKey, &quot;&quot;)</span>
+<span class="s1">        &#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.clear">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.clear">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_clear_script</span><span class="p">()</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_extend_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cached Lua script to add or update keys in the pool.</span>
+
+<span class="sd">        Iterates through provided keys (ARGV[2...]).</span>
+<span class="sd">        If a key doesn&#39;t exist in the pool hash, it&#39;s added to the tail of the free list</span>
+<span class="sd">        using push_to_tail() with the specified expiry (calculated from ARGV[1] timeout).</span>
+<span class="sd">        If a key *does* exist, its expiry time is updated in the pool hash.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local timeout = tonumber(ARGV[1] or -1)</span>
+<span class="s1">        local expiry = timeout_to_expiry(timeout)</span>
+<span class="s1">        for i=2, #ARGV do</span>
+<span class="s1">            local itemName = ARGV[i]</span>
+<span class="s1">            local val = redis.call(&quot;HGET&quot;, poolItemsKey, itemName)</span>
+<span class="s1">            if val then  -- only refresh the expiry timeout</span>
+<span class="s1">                local prev, next, _ = split_pool_value(val)</span>
+<span class="s1">                val = join_pool_value(prev, next, expiry)</span>
+<span class="s1">                redis.call(&quot;HSET&quot;, poolItemsKey, itemName, val)</span>
+<span class="s1">            else -- refresh the expiry timeout</span>
+<span class="s1">                push_to_tail(itemName, expiry)</span>
+<span class="s1">            end</span>
+<span class="s1">        end&#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.extend">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.extend">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add new resources to the allocation pool.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            keys: Sequence of resource identifiers to add to the pool</span>
+<span class="sd">            timeout: Optional timeout in seconds for the pool items (-1 means no timeout)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Ensure timeout is integer for Lua script</span>
+            <span class="n">int_timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_extend_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">int_timeout</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">keys</span><span class="p">))</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_shrink_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cached Lua script to remove keys from the pool.</span>
+
+<span class="sd">        Iterates through provided keys (ARGV[1...]).</span>
+<span class="sd">        For each key:</span>
+<span class="sd">        1. Calls set_item_allocated() to remove it from the free list structure.</span>
+<span class="sd">        2. Deletes the key entirely from the pool hash using HDEL.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        for i=1, #ARGV do</span>
+<span class="s1">            local itemName = ARGV[i]</span>
+<span class="s1">            set_item_allocated(itemName)</span>
+<span class="s1">            redis.call(&quot;HDEL&quot;, poolItemsKey, itemName)</span>
+<span class="s1">        end&#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.shrink">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.shrink">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shrink</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove resources from the allocation pool.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            keys: Sequence of resource identifiers to remove from the pool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_shrink_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="n">keys</span><span class="p">)</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assign_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cached Lua script to set the pool to exactly the given keys.</span>
+
+<span class="sd">        1. Builds a Lua set (`assignSet`) of the desired keys (ARGV[2...]).</span>
+<span class="sd">        2. Fetches all current keys from the pool hash (HKEYS).</span>
+<span class="sd">        3. Iterates through current keys:</span>
+<span class="sd">           - If a key is *not* in `assignSet`, it&#39;s removed from the pool</span>
+<span class="sd">             (set_item_allocated() then HDEL).</span>
+<span class="sd">           - If a key *is* in `assignSet`, it&#39;s marked as processed by setting</span>
+<span class="sd">             `assignSet[key] = nil`.</span>
+<span class="sd">        4. Iterates through the remaining keys in `assignSet` (those not already</span>
+<span class="sd">           in the pool). These are added to the tail of the free list using</span>
+<span class="sd">           push_to_tail() with the specified expiry (from ARGV[1] timeout).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local timeout = tonumber(ARGV[1] or -1)</span>
+<span class="s1">        local expiry = timeout_to_expiry(timeout)</span>
+<span class="s1">        local assignSet  = </span><span class="se">{{}}</span>
+<span class="s1">        for i=2, #ARGV do</span>
+<span class="s1">            local k = ARGV[i]</span>
+<span class="s1">            assignSet[k] = true</span>
+<span class="s1">        end</span>
+<span class="s1">        local allItems = redis.call(&quot;HKEYS&quot;, poolItemsKey)</span>
+<span class="s1">        for _, itemName in ipairs(allItems) do</span>
+<span class="s1">            if not assignSet[itemName] then</span>
+<span class="s1">                set_item_allocated(itemName)</span>
+<span class="s1">                redis.call(&quot;HDEL&quot;, poolItemsKey, itemName)</span>
+<span class="s1">            else</span>
+<span class="s1">                assignSet[itemName] = nil</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+<span class="s1">        for k, v in pairs(assignSet) do</span>
+<span class="s1">            if v then</span>
+<span class="s1">                push_to_tail(k, expiry)</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+<span class="s1">        &#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.assign">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.assign">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Completely replace the resources in the allocation pool.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            keys: Sequence of resource identifiers to assign to the pool,</span>
+<span class="sd">                 replacing any existing resources</span>
+<span class="sd">            timeout: Optional timeout in seconds for the pool items (-1 means no timeout)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_assign_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">timeout</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">keys</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.keys">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.keys">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get all resource identifiers in the allocation pool.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Iterable of resource identifiers in the pool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">hkeys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.__contains__">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.__contains__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a resource identifier is in the allocation pool.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: Resource identifier to check</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the resource is in the pool, False otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">hexists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">(),</span> <span class="n">key</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cache_str</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the Redis key for the allocator&#39;s cache.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            String representation of the Redis key for the cache</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s1">|</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s1">-cache&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_soft_bind_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the Redis key for a soft binding.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: Name of the soft binding</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            String representation of the Redis key for the soft binding</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_cache_str</span><span class="si">}</span><span class="s2">:bind:</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+
+<div class="viewcode-block" id="RedisAllocator.update_soft_bind">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.update_soft_bind">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_soft_bind</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update a soft binding between a name and a resource.</span>
+
+<span class="sd">        Soft bindings create a persistent mapping between named objects and allocated keys,</span>
+<span class="sd">        allowing the same key to be consistently allocated to the same named object.</span>
+<span class="sd">        This is useful for maintaining affinity between objects and their resources.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: Name to bind</span>
+<span class="sd">            key: Resource identifier to bind to the name</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_soft_bind_name</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.unbind_soft_bind">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.unbind_soft_bind">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">unbind_soft_bind</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove a soft binding.</span>
+
+<span class="sd">        This removes the persistent mapping between a named object and its allocated key,</span>
+<span class="sd">        allowing the key to be freely allocated to any requestor.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: Name of the soft binding to remove</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unlock</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_soft_bind_name</span><span class="p">(</span><span class="n">name</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.get_soft_bind">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.get_soft_bind">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_soft_bind</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the resource identifier bound to a name.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name: Name of the soft binding</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_soft_bind_name</span><span class="p">(</span><span class="n">name</span><span class="p">))</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_malloc_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cached Lua script to allocate a key from the pool.</span>
+
+<span class="sd">        Input ARGS: timeout, name (for soft binding), soft_bind_timeout</span>
+
+<span class="sd">        1. Soft Binding Check (if name provided):</span>
+<span class="sd">           - Tries to GET the bound key from the soft bind cache key.</span>
+<span class="sd">           - If found and the key is *not* currently locked (checked via EXISTS key_str(cachedKey)),</span>
+<span class="sd">             it refreshes the soft bind expiry and returns the cached key.</span>
+<span class="sd">           - If found but the key *is* locked, it deletes the stale soft bind entry.</span>
+<span class="sd">        2. Pop from Head: Calls `pop_from_head()` to get the next available key</span>
+<span class="sd">           from the free list head. This function internally skips expired/locked items.</span>
+<span class="sd">        3. Lock/Update (if key found):</span>
+<span class="sd">           - If `shared=False`: Sets the lock key (`key_str(itemName)`) with the specified timeout.</span>
+<span class="sd">           - If `shared=True`: Calls `push_to_tail()` to put the item back onto the free list immediately.</span>
+<span class="sd">        4. Update Soft Bind Cache (if key found and name provided):</span>
+<span class="sd">           - Sets the soft bind cache key to the allocated `itemName` with its timeout.</span>
+<span class="sd">        5. Returns the allocated `itemName` or nil if the pool was empty.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local shared = </span><span class="si">{</span><span class="mi">1</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="bp">self</span><span class="o">.</span><span class="n">shared</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="mi">0</span><span class="si">}</span>
+
+<span class="s1">        local timeout = tonumber(ARGV[1])</span>
+<span class="s1">        local name_arg = ARGV[2] -- Original name argument</span>
+<span class="s1">        local cacheName = soft_bind_name(name_arg) -- Key for soft binding cache</span>
+<span class="s1">        local cacheTimeout = tonumber(ARGV[3]) -- Timeout for the soft binding cache entry</span>
+<span class="s1">        local function refresh_cache(cacheKey)</span>
+<span class="s1">            -- Only refresh if a valid name and timeout were provided</span>
+<span class="s1">            if name_arg ~= &quot;&quot; then</span>
+<span class="s1">                if cacheTimeout ~= nil and cacheTimeout &gt; 0 then</span>
+<span class="s1">                    redis.call(&quot;SET&quot;, cacheName, cacheKey, &quot;EX&quot;, cacheTimeout)</span>
+<span class="s1">                else -- If timeout is invalid/zero, set without expiry</span>
+<span class="s1">                    redis.call(&quot;SET&quot;, cacheName, cacheKey)</span>
+<span class="s1">                end</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+<span class="s1">        -- Check soft binding only if a name was provided</span>
+<span class="s1">        if name_arg ~= &quot;&quot; then</span>
+<span class="s1">            local cachedKey = redis.call(&quot;GET&quot;, cacheName)</span>
+<span class="s1">            if cachedKey then</span>
+<span class="s1">                -- Check if the cached key exists and is currently locked (in non-shared mode)</span>
+<span class="s1">                if redis.call(&quot;HEXISTS&quot;, poolItemsKey, cachedKey) &lt;= 0 or redis.call(&quot;EXISTS&quot;, key_str(cachedKey)) &gt; 0 then</span>
+<span class="s1">                    -- Cached key is locked, binding is stale, remove it</span>
+<span class="s1">                    redis.call(&quot;DEL&quot;, cacheName)</span>
+<span class="s1">                else</span>
+<span class="s1">                    -- Cached key is valid (either not locked or in shared mode)</span>
+<span class="s1">                    refresh_cache(cachedKey) -- Refresh the cache expiry</span>
+<span class="s1">                    if shared == 0 then</span>
+<span class="s1">                        redis.call(&quot;SET&quot;, key_str(cachedKey), &quot;1&quot;, &quot;EX&quot;, timeout)</span>
+<span class="s1">                        set_item_allocated(cachedKey)</span>
+<span class="s1">                    end</span>
+<span class="s1">                    return cachedKey</span>
+<span class="s1">                end</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+
+<span class="s1">        -- No valid soft bind found, proceed with normal allocation</span>
+<span class="s1">        local itemName, expiry = pop_from_head()</span>
+<span class="s1">        if itemName ~= nil then</span>
+<span class="s1">            if shared == 0 then</span>
+<span class="s1">                -- Non-shared mode: Acquire lock</span>
+<span class="s1">                if timeout ~= nil and timeout &gt; 0 then</span>
+<span class="s1">                    redis.call(&quot;SET&quot;, key_str(itemName), &quot;1&quot;, &quot;EX&quot;, timeout)</span>
+<span class="s1">                else</span>
+<span class="s1">                    redis.call(&quot;SET&quot;, key_str(itemName), &quot;1&quot;) -- Set without expiry if timeout &lt;= 0</span>
+<span class="s1">                end</span>
+<span class="s1">            else</span>
+<span class="s1">                -- Shared mode: Just put it back to the tail</span>
+<span class="s1">                push_to_tail(itemName, expiry)</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+
+<span class="s1">        -- If allocation was successful and a name was provided, update the soft bind cache</span>
+<span class="s1">        if itemName then</span>
+<span class="s1">            refresh_cache(itemName)</span>
+<span class="s1">        end</span>
+<span class="s1">        return itemName</span>
+<span class="s1">        &#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.malloc_key">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.malloc_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">malloc_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                   <span class="n">cache_timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allocate a resource key from the pool.</span>
+
+<span class="sd">        The behavior depends on the allocator&#39;s shared mode:</span>
+<span class="sd">        - In non-shared mode (default): Locks the allocated key for exclusive access</span>
+<span class="sd">        - In shared mode: Simply removes the key from the free list without locking it</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            timeout: How long the allocation lock should be valid (in seconds).</span>
+<span class="sd">            name: Optional name to use for soft binding.</span>
+<span class="sd">            cache_timeout: Timeout for the soft binding cache entry (seconds).</span>
+<span class="sd">                           Defaults to 3600. If &lt;= 0, cache entry persists indefinitely.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Resource identifier if allocation was successful, None otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="c1"># Convert timeout values to integers for Lua</span>
+        <span class="n">lock_timeout_sec</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_to_seconds</span><span class="p">(</span><span class="n">timeout</span><span class="p">))</span>
+        <span class="n">cache_timeout_sec</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_to_seconds</span><span class="p">(</span><span class="n">cache_timeout</span><span class="p">))</span>
+        <span class="c1"># Convert integers to strings for Lua script arguments</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_malloc_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">lock_timeout_sec</span><span class="p">,</span>
+            <span class="n">name</span><span class="p">,</span>
+            <span class="n">cache_timeout_sec</span><span class="p">,</span>
+        <span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.malloc">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.malloc">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">malloc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">U</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+               <span class="n">cache_timeout</span><span class="p">:</span> <span class="n">Timeout</span> <span class="o">=</span> <span class="mi">3600</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">RedisAllocatorObject</span><span class="p">[</span><span class="n">U</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Allocate a resource from the pool and wrap it in a RedisAllocatorObject.</span>
+
+<span class="sd">        If a policy is configured, it will be used to control the allocation behavior.</span>
+<span class="sd">        Otherwise, the basic allocation mechanism will be used.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            timeout: How long the allocation lock should be valid (in seconds)</span>
+<span class="sd">            obj: The object to wrap in the RedisAllocatorObject. If it has a `.name`,</span>
+<span class="sd">                 soft binding will be attempted.</span>
+<span class="sd">            params: Additional parameters to associate with the allocated object.</span>
+<span class="sd">            cache_timeout: Timeout for the soft binding cache entry (seconds).</span>
+<span class="sd">                           Defaults to 3600. Passed to the policy or `malloc_key`.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            RedisAllocatorObject wrapping the allocated resource if successful, None otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="p">:</span>
+            <span class="c1"># Pass cache_timeout to the policy&#39;s malloc method</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">malloc</span><span class="p">(</span>
+                <span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span>
+                <span class="n">cache_timeout</span><span class="o">=</span><span class="n">cache_timeout</span>
+            <span class="p">)</span>
+        <span class="c1"># No policy, call malloc_key directly</span>
+        <span class="c1"># Explicitly call obj.name if obj exists</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">malloc_key</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">cache_timeout</span><span class="o">=</span><span class="n">cache_timeout</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">RedisAllocatorObject</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">params</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_free_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cached Lua script to free allocated keys.</span>
+
+<span class="sd">        Iterates through provided keys (ARGV[2...]).</span>
+<span class="sd">        For each key:</span>
+<span class="sd">        1. Deletes the corresponding lock key (`key_str(k)`) using DEL.</span>
+<span class="sd">           If the key existed (DEL returns 1), it proceeds.</span>
+<span class="sd">        2. Adds the key back to the tail of the free list using `push_to_tail()`</span>
+<span class="sd">           with the specified expiry (calculated from ARGV[1] timeout).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local timeout = tonumber(ARGV[1] or -1)</span>
+<span class="s1">        local expiry = timeout_to_expiry(timeout)</span>
+<span class="s1">        for i=2, #ARGV do</span>
+<span class="s1">            local k = ARGV[i]</span>
+<span class="s1">            local deleted = redis.call(&#39;DEL&#39;, key_str(k))</span>
+<span class="s1">            if deleted &gt; 0 then -- Only push back to pool if it was actually locked/deleted</span>
+<span class="s1">                push_to_tail(k, expiry)</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+<span class="s1">        &#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.free_keys">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.free_keys">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">free_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">keys</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Free allocated resources.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            *keys: Resource identifiers to free</span>
+<span class="sd">            timeout: Optional timeout in seconds for the pool items (-1 means no timeout)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">keys</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_free_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">timeout</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">keys</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="RedisAllocator.free">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.free">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">free</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">RedisAllocatorObject</span><span class="p">[</span><span class="n">U</span><span class="p">],</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Free an allocated object.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            obj: The allocated object to free</span>
+<span class="sd">            timeout: Optional timeout in seconds for the pool item (-1 means no timeout)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">free_keys</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span></div>
+
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_free_list_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        return get_free_list()</span>
+<span class="s1">        &#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.get_free_list">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.get_free_list">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_free_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_free_list_script</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gc_cursor_str</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the Redis key for the garbage collection cursor.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            String representation of the Redis key for the GC cursor</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_pool_str</span><span class="p">()</span><span class="si">}</span><span class="s1">|gc_cursor&#39;</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gc_script</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cached Lua script for performing garbage collection.</span>
+
+<span class="sd">        Uses HSCAN to iterate through the pool hash incrementally.</span>
+<span class="sd">        Input ARGS: count (max items to scan per call)</span>
+
+<span class="sd">        1. Gets the scan cursor from a dedicated key (`_gc_cursor_str()`).</span>
+<span class="sd">        2. Calls HSCAN on the pool hash (`pool_str()`) starting from the cursor,</span>
+<span class="sd">           requesting up to `count` items.</span>
+<span class="sd">        3. Iterates through the key-value pairs returned by HSCAN.</span>
+<span class="sd">        4. For each item, calls `check_item_health()` to reconcile its state</span>
+<span class="sd">           (see `_lua_required_string` documentation).</span>
+<span class="sd">        5. Saves the new cursor returned by HSCAN for the next GC call.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">redis</span><span class="o">.</span><span class="n">register_script</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">        </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_lua_required_string</span><span class="si">}</span>
+<span class="s1">        local cursorKey = &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_gc_cursor_str</span><span class="p">()</span><span class="si">}</span><span class="s1">&#39;</span>
+<span class="s1">        local function get_cursor()</span>
+<span class="s1">            local oldCursor = redis.call(&quot;GET&quot;, cursorKey)</span>
+<span class="s1">            if not oldCursor or oldCursor == &quot;&quot; then</span>
+<span class="s1">                return &quot;0&quot;</span>
+<span class="s1">            else</span>
+<span class="s1">                return oldCursor</span>
+<span class="s1">            end</span>
+<span class="s1">        end</span>
+<span class="s1">        local function set_cursor(cursor)</span>
+<span class="s1">            redis.call(&quot;SET&quot;, cursorKey, cursor)</span>
+<span class="s1">        end</span>
+<span class="s1">        local n = tonumber(ARGV[1])</span>
+<span class="s1">        local scanResult = redis.call(&quot;HSCAN&quot;, pool_str(), get_cursor(), &quot;COUNT&quot;, n)</span>
+<span class="s1">        local newCursor  = scanResult[1]</span>
+<span class="s1">        local kvList     = scanResult[2]</span>
+<span class="s1">        local t = &quot;&quot;</span>
+<span class="s1">        for i = 1, #kvList, 2 do</span>
+<span class="s1">            local itemName = kvList[i]</span>
+<span class="s1">            -- local val      = kvList[i + 1]</span>
+<span class="s1">            check_item_health(itemName)</span>
+<span class="s1">        end</span>
+<span class="s1">        set_cursor(newCursor)</span>
+<span class="s1">        &#39;&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RedisAllocator.gc">
+<a class="viewcode-back" href="../../api/allocator.html#redis_allocator.allocator.RedisAllocator.gc">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Perform garbage collection on the allocation pool.</span>
+
+<span class="sd">        This method scans through the pool and ensures consistency between</span>
+<span class="sd">        the allocation metadata and the actual locks.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            count: Number of items to check in this garbage collection pass</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Ensure count is positive</span>
+        <span class="k">assert</span> <span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;count should be positive&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_gc_script</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">count</span><span class="p">])</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2025, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
