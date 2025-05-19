@@ -434,7 +434,7 @@ class TestRedisAllocator:
             allocator_with_policy.gc()  # some times should be called twice to remove the expired items
             redis_client.register_script("print('-------------------------------')")()
             print(self.get_redis_pool_state(allocator_with_policy, redis_client))
-            allocator_with_policy.policy.refresh_pool(allocator_with_policy)
+            allocator_with_policy.policy.refresh_pool(allocator_with_policy, shuffle=False)
             assert len(allocator_with_policy) == 4
             allocator_with_policy.gc()
             assert self.get_redis_pool_state(allocator_with_policy, redis_client) == self.generate_pool_state(
