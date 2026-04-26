@@ -9,3 +9,18 @@ tag_format = "v$version"
 
 [tool.commitizen.version_files]
 "redis_allocator/_version.py" = { search = "__version__ = '", replace = "__version__ = '" }
+
+[tool.pytest.ini_options]
+# Opt-in markers for tests that are slow, flaky, or need external services.
+# Default `pytest` invocation excludes them; CI runs only the fast unit suite.
+# Run them explicitly with:
+#     pytest -m concurrency           # multi-thread fakeredis race tests
+#     pytest -m fuzz                  # randomised single-thread sequences
+#     pytest -m "concurrency or fuzz"
+markers = [
+    "concurrency: tests that drive the allocator from multiple threads (fakeredis)",
+    "fuzz: random-sequence exploratory tests (may exercise lupa edge cases)",
+    "stress: long-running stress tests requiring external Redis (Docker)",
+    "benchmark: performance assertions (constant-time complexity, etc.)",
+]
+addopts = "-m 'not concurrency and not fuzz and not stress and not benchmark'"

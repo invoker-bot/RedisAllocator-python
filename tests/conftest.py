@@ -9,6 +9,49 @@ from redis_allocator.allocator import (
     RedisAllocatorUpdater, DefaultRedisAllocatorPolicy
 )
 
+# ---------------------------------------------------------------------------
+# fakeredis upstream bug workaround.
+#
+# fakeredis 2.35.x ``HashCommandsMixin._hset`` calls ``len(h.keys())`` twice
+# per HSET. ``Hash.keys()`` (in fakeredis/model/_hash.py) constructs a fresh
+# ``[asbytes(k) for k in ...]`` list every call — making each HSET O(n) in
+# the hash's existing size, even though Hash.__len__ itself is O(1).
+#
+# Real Redis HSET is hard O(1). This monkey-patch replaces the inner helper
+# with the equivalent O(1) version so that fakeredis-based benchmarks reflect
+# the allocator's true complexity rather than fakeredis's instrumentation
+# overhead. The semantics are identical: ``len(h.keys())`` and ``len(h)`` both
+# return the number of fields, both call ``_expire_keys()`` first, and the
+# returned ``created`` count is identical.
+#
+# Upstream issue worth filing.
+# ---------------------------------------------------------------------------
+
+
+def _install_fakeredis_hset_o1_patch() -> None:
+    try:
+        from fakeredis.commands_mixins import hash_mixin as _hm
+    except ImportError:
+        return
+    if getattr(_hm.HashCommandsMixin, "_hset_patched_o1", False):
+        return
+    _orig = _hm.HashCommandsMixin._hset
+
+    def _hset_o1(self, key, *args):
+        h = key.value
+        previous_keys_count = len(h)
+        h.update(dict(zip(*[iter(args)] * 2)), clear_expiration=True)
+        created = len(h) - previous_keys_count
+        key.updated()
+        return created
+
+    _hm.HashCommandsMixin._hset = _hset_o1
+    _hm.HashCommandsMixin._hset_patched_o1 = True
+    _hm.HashCommandsMixin._hset_original = _orig
+
+
+_install_fakeredis_hset_o1_patch()
+
 
 @pytest.fixture
 def redis_client():
