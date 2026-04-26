@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Target Python: **3.10+** (CI runs py310 and py311 via tox).
 - Public surface is re-exported from `redis_allocator/__init__.py`; everything else is implementation.
-- Tests use `fakeredis[lua]` — the `[lua]` extra is mandatory because most code paths execute server-side Lua (`register_script`).
+- Tests use `fakeredis[lua] >= 2.36` — the `[lua]` extra is mandatory because most code paths execute server-side Lua (`register_script`). The benchmark suite (`pytest -m benchmark`) additionally relies on a fakeredis upstream HSET fix not yet in any released version (PR pending in `cunla/fakeredis-py`); until that lands, run benchmark only against a `pip install -e` of the patched fakeredis fork or skip it on fresh installs.
 
 ## Common Commands
 
