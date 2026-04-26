@@ -168,8 +168,17 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# VS Code
+.vscode/
+
 # Ruff stuff:
 .ruff_cache/
 
 # PyPI configuration file
 .pypirc
+
+# Claude Code
+#   Local, per-developer settings (permissions, env overrides). Project-level
+#   .claude/settings.json and shared commands/agents/hooks should still be committed.
+.claude/settings.local.json
+
