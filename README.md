@@ -36,6 +36,15 @@ RedisAllocator is built around these key ideas:
 - **Shared Mode**: Configurable allocation modes supporting both exclusive and shared resource usage
 - **Soft Binding**: Associates named objects with specific resources for consistent allocation
 
+## Behavior Contracts (Important for API Users)
+
+A few intentional behaviors that may surprise newcomers — knowing them up-front avoids debugging dead-ends:
+
+- **`malloc_key(timeout<=0)` creates a permanent (non-expiring) lock.** Useful for resources whose ownership must outlive process restarts; the caller takes responsibility for releasing via `free_keys`. GC never reclaims it (because expiry is also `-1`). Misuse causes resource leaks — only pass `timeout=0` when you mean "I will manage this lock myself."
+- **`cache_timeout=0` (or negative) creates a permanent soft binding.** Sticks until explicitly overwritten by another `update_soft_bind` for the same name, or removed via `unbind_soft_bind`. Symmetric to the lock-timeout contract above.
+- **`assign()` does not delete the lock keys of items it evicts.** A deliberate write-amplification trade-off: locks expire on their own TTL, and if the same key is later re-`extend`-ed into the pool, the new `extend`/`assign` clears any residual lock so the new entry starts clean. If you evict a key and never re-add it, the lock is an orphan — callers who care must `DEL <prefix>|<suffix>:<key>` themselves.
+- **Pool keys are validated at the API boundary.** `extend()` / `assign()` raise `ValueError` for keys that are empty, equal to the literal `"#ALLOCATED"`, contain the `"||"` separator, contain NUL bytes, or are not strings. These shapes break the on-disk encoding and would silently corrupt the linked list.
+
 ## Documentation
 
 For complete documentation, please visit our [official documentation site](https://invoker-bot.github.io/RedisAllocator-python/).
@@ -432,6 +441,44 @@ The RedisAllocator maintains resources in a doubly-linked list structure stored 
   - Cleans up inconsistent states between allocations and locks
 - Soft bindings are implemented as separate locks with their own timeout period
 
+### Concurrency Safety
+
+Each EVAL is atomic on Redis (single-threaded server, Lua never preempted), so no operation can be observed half-completed. Multi-process coordination is then provided by lock TTL plus the GC pass — a process killed mid-sequence leaves at most an orphaned lock, which expires on its TTL or is reclaimed by GC.
+
+The pool linked-list invariants survive arbitrary interleaving of `malloc` / `free` / `extend` / `assign` / `gc` from concurrent processes (validated by both fakeredis multi-thread tests and a Docker-backed stress driver — see Testing below). If you observe persistent invariant violations under load, please file an issue with the operation sequence.
+
+## Testing
+
+The default unit suite is fast (~7s) and self-contained — `pytest` runs it without any external services:
+
+```bash
+pip install -e ".[dev]"
+pytest                            # ~180 tests, fakeredis only, ~7s
+flake8 redis_allocator tests --max-line-length=150
+tox                               # py310 / py311 / flake8, matches CI
+```
+
+Several test categories are **opt-in via pytest markers** (excluded from the default run by `pyproject.toml`):
+
+```bash
+pytest -m concurrency             # multi-thread fakeredis race tests (~25s)
+pytest -m fuzz                    # randomised single-thread sequences
+pytest -m benchmark               # constant-time complexity assertions for malloc/free/extend
+pytest -m "concurrency or fuzz or benchmark"   # all of the above
+```
+
+For the strongest validation against real-world conditions there is a Docker-backed stress driver under `tests/stress_pool_corruption.py`. It is a standalone script (not collected by pytest), spawning multiple worker processes that randomly malloc / free / extend / shrink / assign / gc against a real Redis container while a "murderer" process randomly SIGKILLs workers to simulate crashes. An atomic-snapshot watcher checks pool invariants throughout. Typical run:
+
+```bash
+docker run --rm -d --name allocator-stress -p 6399:6379 redis:7-alpine
+python tests/stress_pool_corruption.py        # 60s default; STRESS_DURATION/STRESS_WORKERS env vars
+docker rm -f allocator-stress
+```
+
+Performance contracts are validated on both backends. Real Redis 7 confirms hard `O(1)` for `malloc + free` and `extend` per-key cost across pool sizes from 10 to 5000 keys. The fakeredis `pytest -m benchmark` enforces the same threshold; it relies on a temporary monkey-patch in `tests/conftest.py` because of [fakeredis upstream PR #473](https://github.com/cunla/fakeredis-py/pull/473) (merged to master, not yet released). The patch is idempotent and self-removable once fakeredis ships a release containing the fix — see the cleanup checklist embedded in `tests/conftest.py`.
+
+A standalone Python script `tests/_perf_real_redis.py` reproduces the benchmark against a real Redis container for cross-checking.
+
 ## Roadmap
 
 *   **Core Focus & Recently Completed:**
@@ -442,6 +489,9 @@ The RedisAllocator maintains resources in a doubly-linked list structure stored 
     *   [x] Basic Garbage Collection & Health Checking Foundation
     *   [x] Documentation Improvements (Shared Mode, Soft Binding, Lua Clarity)
     *   [x] Foundational Unit Tests & Allocation Mode Coverage
+    *   [x] **Pool hardened against multi-process race corruption** (input validation, head-pointer maintenance across locked/expired skip, zombie-key prevention, residual-lock cleanup on re-add, soft-binding ordering, GC self-healing) — see [BUGHUNT_REPORT.md](BUGHUNT_REPORT.md).
+    *   [x] **Comprehensive test infrastructure**: bug-hunt regression suite, atomic-snapshot invariant checker, concurrency / fuzz / benchmark / stress markers, Docker-backed stress driver, real-Redis cross-checks.
+    *   [x] **`O(1)` performance contract** for `malloc` / `free` / `extend` validated on both real Redis and patched fakeredis.
 
 *   **Current Development Priorities (Focusing on Proxy Pool Needs):**
     *   [ ] **Resource Prioritization:** Implement priority-based allocation in `RedisAllocator`, likely using Redis Sorted Sets (`ZSET`) for the free pool. *(New - High Priority)*
