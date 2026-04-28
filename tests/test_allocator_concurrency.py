@@ -1,25 +1,10 @@
-"""Concurrent pool-corruption reproductions using fakeredis + threads.
+"""Concurrent pool-invariant tests using fakeredis + threads.
 
-fakeredis serializes individual commands with an internal RLock, which means
-each EVAL is atomic (just like real Redis), but multiple EVALs from different
-threads can interleave between commands. That is precisely the model that
-produces the user-reported "pool structure completely corrupted" symptom in
-production.
-
-These tests are *expected to fail* until the underlying race-driven bugs are
-fixed. Each is marked ``xfail(strict=False)`` so the suite stays green for CI
-while the bugs are open. ``pytest --runxfail`` (or unmarking after a fix)
-turns them into hard failures so a regression is caught.
-
-What this file does NOT cover:
-
-- True process kills (SIGKILL). We approximate by having "abandoner" threads
-  that grab keys and never free them, which leaves the same lingering
-  state in Redis as a real crash.
-- Cross-process memory effects (held-key Python lists). Threads share memory,
-  so a thread that "abandons" still leaves its held list in process memory —
-  but Redis doesn't see that, only the actions, so this is faithful to the
-  bug surface that matters.
+fakeredis serializes individual commands with an internal RLock, so each
+EVAL is atomic (like real Redis) but multi-threaded EVALs interleave
+between commands — the same model real Redis exposes to multi-process
+clients. ``abandoner`` threads grab keys and never free them to simulate a
+crashed worker.
 """
 from __future__ import annotations
 
@@ -132,17 +117,7 @@ def _watcher_loop(
 
 @pytest.mark.concurrency
 def test_concurrent_pool_invariants_preserved_under_threads():
-    """Allocator must preserve all structural invariants under concurrent ops.
-
-    History: an earlier version of this file expected to *reproduce* corruption
-    here (xfail). After replacing the watcher's snapshot with an atomic Lua
-    EVAL, the "violations" disappeared — proving they were artifacts of
-    non-atomic snapshot reads (head + entries fetched in separate commands,
-    interleaved with concurrent EVALs), not real persistent corruption.
-
-    The test is now a regression net: if a future change introduces a real
-    persistent inconsistency, the atomic watcher will catch it.
-    """
+    """All structural invariants must hold under concurrent malloc/free/etc."""
     server, make_client = _make_shared_redis()
     seed_redis = make_client()
     alloc = RedisAllocator(seed_redis, "concurrent", "stress", shared=False)

@@ -438,29 +438,11 @@ class TestEdgeCases:
     def test_edge_zombie_key_resurrection_after_assign_then_free(
         self, redis_client: Redis
     ):
-        """Regression: free() of a key evicted by assign() must NOT resurrect it.
-
-        The fix in ``_free_script`` adds a ``HEXISTS poolItemsKey`` guard so
-        that ``push_to_tail`` only fires when the key is still a pool member.
-        Before the fix this test failed (zombie key reinserted).
-
-        This is the most plausible mechanism behind the user-reported real-Redis
-        multi-process corruption: any interleaving of
-        ``malloc -> assign -> free`` across EVALs produces a zombie entry,
-        because ``free_keys`` does not check that the key is currently a member
-        of the pool before pushing it back.
-
-        Hypothesised root cause: combination of by-design #4 (assign keeps lock
-        keys to save writes) and ``_free_script`` using ``push_to_tail`` without
-        a "key must be in pool" precondition.
-        """
+        """``free()`` of a key already evicted by ``assign()`` must not put it back."""
         alloc = RedisAllocator(redis_client, "zombie", "t", shared=False)
         alloc.extend(["a", "b"])
         k = alloc.malloc_key(timeout=300)
         assert k == "a"
-        # Now simulate another process calling assign() with a wholly different
-        # set, intending to fully replace the pool. Per by-design #4 the lock
-        # key for "a" survives this call.
         alloc.assign(["x", "y"])
         snap = snapshot(alloc)
         assert set(snap.entries) == {"x", "y"}, "assign should leave only x,y in pool"

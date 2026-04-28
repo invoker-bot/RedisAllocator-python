@@ -1,21 +1,5 @@
-"""Forensic reproduction of the "head -> #ALLOCATED" race.
-
-The concurrent stress test confirms pool corruption happens; this file
-narrows down the *which EVAL produced the bad state* by recording every
-high-level allocator method call (with thread name, args, return value, and
-a tiny pre/post snapshot of head/tail) and dumping the last N entries when
-the watcher first sees a violation.
-
-Together with ``test_allocator_concurrency.py``, this gives us:
-
-  - That file: prove corruption happens (xfail).
-  - This file: prove WHICH operation caused it (xfail with detailed trace).
-
-Static analysis (see BUGHUNT_REPORT.md root-cause section) suggests the
-locked-skip branch of ``pop_from_head`` does not update ``headNext.prev``,
-leaving stale prev/next references that combine with the zombie-key bug to
-cascade into half-allocated entries and head/tail pointing at allocated
-nodes.
+"""Forensic concurrent stress: dumps the last N allocator method calls
+(with thread / args / post-state) on the first invariant violation.
 """
 from __future__ import annotations
 
@@ -23,7 +7,8 @@ import functools
 import random
 import threading
 import time
-from typing import List
+from collections import deque
+from typing import Deque, List
 
 import fakeredis
 import pytest
@@ -32,16 +17,11 @@ from redis_allocator.allocator import RedisAllocator
 from tests._bughunt_helpers import check_invariants_with_snapshot
 
 
-# Tighter knobs than the wider concurrency test — small pool, few threads,
-# but high op rate so EVAL interleavings are dense and the race fires fast.
 NUM_WORKERS = 4
 OPS_PER_WORKER = 800
 INITIAL_POOL_SIZE = 6
-TRACE_TAIL = 60  # how many recent calls to dump on violation
+TRACE_TAIL = 60
 
-
-# Module-level lock so multiple wrappers append to the trace serially without
-# racing on the list itself.
 _TRACE_LOCK = threading.Lock()
 
 
@@ -50,7 +30,7 @@ def _make_shared_redis():
     return server, lambda: fakeredis.FakeRedis(server=server, decode_responses=True)
 
 
-def _instrument(alloc: RedisAllocator, trace: list) -> None:
+def _instrument(alloc: RedisAllocator, trace) -> None:
     """Wrap allocator methods so each call is appended to ``trace``.
 
     Captures: thread name, monotonic timestamp, method, args, post-state
@@ -102,7 +82,7 @@ def _worker_loop(
     make_client,
     worker_id: int,
     stop_event: threading.Event,
-    trace: list,
+    trace,
     ops_count: int,
 ) -> None:
     rng = random.Random(worker_id * 0x9E3779B1)
@@ -162,9 +142,10 @@ def _watcher_loop(
         time.sleep(0.003)
 
 
-def _format_trace_tail(trace: list, n: int) -> str:
+def _format_trace_tail(trace, n: int) -> str:
     with _TRACE_LOCK:
-        tail = list(trace[-n:])
+        # deque doesn't support slicing; materialize once then take the tail.
+        tail = list(trace)[-n:]
     lines = []
     for thr, ts, name, args, kwargs, ret, post in tail:
         ret_repr = repr(ret)
@@ -177,19 +158,14 @@ def _format_trace_tail(trace: list, n: int) -> str:
 
 @pytest.mark.concurrency
 def test_forensic_no_violations_with_trace_on_failure():
-    """Concurrent dense ops with method-call tracing — no violations expected.
-
-    If ever a violation occurs, the trace tail is dumped so the offending EVAL
-    sequence is visible. Acts as a stricter, smaller-pool variant of
-    ``test_concurrent_pool_invariants_preserved_under_threads`` with extra
-    debug output ready for forensic analysis.
-    """
+    """Same contract as the concurrency invariant test, but on violation
+    dumps the last ``TRACE_TAIL`` allocator method calls for forensics."""
     server, make_client = _make_shared_redis()
     seed_redis = make_client()
     alloc = RedisAllocator(seed_redis, "forensic", "t", shared=False)
     alloc.extend([f"k{i}" for i in range(INITIAL_POOL_SIZE)], timeout=120)
 
-    trace: list = []
+    trace: Deque = deque(maxlen=TRACE_TAIL + 200)
     violation_box: list = []
     stop_event = threading.Event()
 

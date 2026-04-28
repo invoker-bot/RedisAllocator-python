@@ -5,13 +5,15 @@ of the Lua implementation under test) so that we can assert hard invariants
 after every operation. Any violation indicates either a bug in the allocator
 implementation or a bug in the test setup.
 """
+import weakref
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from redis_allocator.allocator import RedisAllocator
-
-
-ALLOCATED_SENTINEL = "#ALLOCATED"
+from redis_allocator.allocator import (
+    ALLOCATED_SENTINEL,
+    POOL_VALUE_SEP,
+    RedisAllocator,
+)
 
 
 @dataclass
@@ -56,13 +58,12 @@ class PoolSnapshot:
 def _parse_entry(raw: str) -> PoolEntry:
     """Parse an on-disk pool hash value.
 
-    Mirrors the Lua ``split_pool_value`` function. Note the Lua version uses
-    a greedy ``(.*)||(.*)||(.*)`` regex which can mis-parse values containing
-    additional ``||`` substrings — we deliberately use ``rpartition`` here so
-    the helper can fairly observe such corruption.
+    Uses ``rpartition``/``partition`` instead of the Lua side's greedy
+    ``(.*)||(.*)||(.*)`` regex so the helper observes — rather than mirrors
+    — that mis-parse if it occurs.
     """
-    rest, _, expiry_str = raw.rpartition("||")
-    prev, _, nxt = rest.partition("||")
+    rest, _, expiry_str = raw.rpartition(POOL_VALUE_SEP)
+    prev, _, nxt = rest.partition(POOL_VALUE_SEP)
     try:
         expiry = int(expiry_str)
     except ValueError:
@@ -87,16 +88,16 @@ end
 return result
 """
 
-# Cache one Script per Redis client instance so EVALSHA is reused efficiently
-# under stress. Keyed by id(redis_client) to avoid leaking state across tests.
-_SNAPSHOT_SCRIPT_CACHE: dict = {}
+# Cache one Script per Redis client. WeakKeyDictionary so entries vanish
+# when the client is GC'd (long-running test sessions create many clients).
+_SNAPSHOT_SCRIPT_CACHE: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 def _snapshot_script(redis):
-    cached = _SNAPSHOT_SCRIPT_CACHE.get(id(redis))
+    cached = _SNAPSHOT_SCRIPT_CACHE.get(redis)
     if cached is None:
         cached = redis.register_script(_ATOMIC_SNAPSHOT_LUA)
-        _SNAPSHOT_SCRIPT_CACHE[id(redis)] = cached
+        _SNAPSHOT_SCRIPT_CACHE[redis] = cached
     return cached
 
 
@@ -114,7 +115,7 @@ def snapshot(allocator: RedisAllocator) -> PoolSnapshot:
     """
     redis = allocator.redis
     pool_key = allocator._pool_str()
-    key_prefix = f"{allocator.prefix}|{allocator.suffix}:"
+    key_prefix = allocator._key_str("")
     raw = _snapshot_script(redis)(
         keys=[
             allocator._pool_pointer_str(True),
@@ -136,7 +137,7 @@ def snapshot(allocator: RedisAllocator) -> PoolSnapshot:
         lock_keys[k] = locked
         i += 3
 
-    cache_prefix = f"{allocator._cache_str}:bind:"
+    cache_prefix = allocator._soft_bind_name("")
     bindings = {}
     for binding_key in redis.scan_iter(match=f"{cache_prefix}*"):
         name = binding_key[len(cache_prefix):]

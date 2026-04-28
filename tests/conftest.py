@@ -9,34 +9,10 @@ from redis_allocator.allocator import (
     RedisAllocatorUpdater, DefaultRedisAllocatorPolicy
 )
 
-# ---------------------------------------------------------------------------
-# fakeredis upstream HSET-O(n) workaround — TEMPORARY BRIDGE.
-#
-# fakeredis ``HashCommandsMixin._hset`` calls ``len(h.keys())`` twice. Because
-# ``Hash.keys()`` constructs a fresh ``[asbytes(k) for k in ...]`` list every
-# call, each HSET is O(n) in the existing hash size — even though
-# ``Hash.__len__`` itself is O(1). Real Redis HSET is hard O(1).
-#
-# The fix is upstream: https://github.com/cunla/fakeredis-py/pull/473
-# (merged 2026-04-26 as commit 1e1173b on master). However, no release tag
-# yet contains the fix — latest PyPI release is fakeredis 2.35.1, which
-# still has the bug.
-#
-# This monkey-patch is therefore a bridge until fakeredis cuts a release
-# with the fix.
-#
-# ============================================================
-# CLEANUP CHECKLIST — do this in ONE commit when fakeredis releases the fix:
-#   1. Delete this entire block (the ``_install_...`` function and its call).
-#   2. Bump ``setup.py`` test dep to ``fakeredis[lua] >= <release>`` where
-#      <release> is the first version containing PR #473 (e.g. 2.36.0 or
-#      2.37.0 — check the release notes / git tag).
-#   3. Update CLAUDE.md "Project Snapshot" — remove the workaround mention.
-#   4. Verify ``pytest -m benchmark`` still passes on a fresh install.
-# Reference:
-#   - PR: https://github.com/cunla/fakeredis-py/pull/473
-#   - Local fix branch: D:\Projects\GitHub\fakeredis-py:fix-hset-on-large-hash
-# ============================================================
+# Bridge for https://github.com/cunla/fakeredis-py/pull/473 (merged but not
+# yet in a release). Drop this block, bump the fakeredis dep in setup.py to
+# the first version containing the fix, and update CLAUDE.md once that
+# release ships.
 
 
 def _install_fakeredis_hset_o1_patch() -> None:

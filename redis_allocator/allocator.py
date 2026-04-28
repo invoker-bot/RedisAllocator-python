@@ -33,6 +33,16 @@ from .lock import RedisLockPool, Timeout
 
 logger = logging.getLogger(__name__)
 
+#: Sentinel written into the prev/next fields of a pool hash entry to mark
+#: the key as currently allocated. Pool keys equal to this string are
+#: rejected by ``RedisAllocator._validate_keys`` to avoid collision.
+ALLOCATED_SENTINEL = "#ALLOCATED"
+
+#: Separator between prev / next / expiry inside a pool hash value
+#: ("prev||next||expiry"). Pool keys containing this substring are rejected
+#: at the API boundary to avoid the encoding being mis-parsed.
+POOL_VALUE_SEP = "||"
+
 
 class RedisThreadHealthCheckPool(RedisLockPool):
     """A class that provides a simple interface for managing the health status of a thread.
@@ -620,14 +630,14 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 return "", "", -1
             end
             value = tostring(value)
-            local prev, next, expiry = string.match(value, "(.*)||(.*)||(.*)")
+            local prev, next, expiry = string.match(value, "(.*){POOL_VALUE_SEP}(.*){POOL_VALUE_SEP}(.*)")
             return prev, next, tonumber(expiry)
         end
         local function join_pool_value(prev, next, expiry)
             if expiry == nil then
                 expiry = -1
             end
-            return tostring(prev) .. "||" .. tostring(next) .. "||" .. tostring(expiry)
+            return tostring(prev) .. "{POOL_VALUE_SEP}" .. tostring(next) .. "{POOL_VALUE_SEP}" .. tostring(expiry)
         end
         local function timeout_to_expiry(timeout)
             if timeout == nil or timeout <= 0 then
@@ -672,8 +682,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             local itemVal = redis.call("HGET", poolItemsKey, itemName)
             if itemVal then
                 local prev, next, expiry = split_pool_value(itemVal)
-                assert(prev == "#ALLOCATED" or prev == "", "item should be allocated or free")
-                assert(next == "" or next == "#ALLOCATED", "item should be the last item in the free list")
+                assert(prev == "{ALLOCATED_SENTINEL}" or prev == "", "item should be allocated or free")
+                assert(next == "" or next == "{ALLOCATED_SENTINEL}", "item should be the last item in the free list")
             end
             -- set the item points to the tail
             redis.call("HSET", poolItemsKey, itemName, join_pool_value(tail, "", expiry))
@@ -721,14 +731,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             local headVal = redis.call("HGET", poolItemsKey, head)
             assert(headVal, "head value should not be nil")
             local headPrev, headNext, headExpiry = split_pool_value(headVal)
-            -- Helper: head is being removed/marked-allocated; promote headNext
-            -- to be the new head and stitch its prev to "". Without this,
-            -- headNext.prev keeps referring to a key that is now either gone
-            -- (HDEL'd) or in #ALLOCATED state. Either case lets a later
-            -- set_item_allocated(headNext) corrupt the chain (assert
-            -- "prev value should not be nil" or produce a half-allocated
-            -- "#ALLOCATED || real_key || ..." state — the user-reported
-            -- "pool completely corrupted" symptom).
+            -- Promote headNext to head and stitch its prev to "" so a later
+            -- set_item_allocated cannot dereference the removed prev.
             local function _advance_head_after_removal()
                 if headNext == "" then
                     redis.call("SET", headKey, "")
@@ -737,8 +741,6 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 end
                 local nextVal = redis.call("HGET", poolItemsKey, headNext)
                 if not nextVal then
-                    -- headNext is missing — the list metadata is already
-                    -- inconsistent. Reset to empty rather than chase a ghost.
                     redis.call("SET", headKey, "")
                     redis.call("SET", tailKey, "")
                     return
@@ -753,7 +755,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 _advance_head_after_removal()
                 return pop_from_head()
             elseif redis.call("EXISTS", key_str(head)) > 0 then  -- the item is locked
-                redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
+                redis.call("HSET", poolItemsKey, head, join_pool_value("{ALLOCATED_SENTINEL}", "{ALLOCATED_SENTINEL}", headExpiry))
                 _advance_head_after_removal()
                 return pop_from_head()
             elseif headNext == "" then  -- the item is the last in the free list
@@ -766,7 +768,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 redis.call("HSET", poolItemsKey, headNext, join_pool_value("", nextNext, nextExpiry))
                 redis.call("SET", headKey, headNext)
             end
-            redis.call("HSET", poolItemsKey, head, join_pool_value("#ALLOCATED", "#ALLOCATED", headExpiry))
+            redis.call("HSET", poolItemsKey, head, join_pool_value("{ALLOCATED_SENTINEL}", "{ALLOCATED_SENTINEL}", headExpiry))
             return head, headExpiry
         end
 
@@ -776,8 +778,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
             end
             assert(val, "val should not be nil")
             local prev, next, expiry = split_pool_value(val)
-            if prev ~= "#ALLOCATED" then
-                assert(next ~= "#ALLOCATED", "next item should not be allocated")
+            if prev ~= "{ALLOCATED_SENTINEL}" then
+                assert(next ~= "{ALLOCATED_SENTINEL}", "next item should not be allocated")
                 if is_expiry_invalid(expiry) then
                     redis.call("HDEL", poolItemsKey, itemName)
                 end
@@ -797,14 +799,14 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 else
                     redis.call("SET", tailKey, prev)
                 end
-                redis.call("HSET", poolItemsKey, itemName, join_pool_value("#ALLOCATED", "#ALLOCATED", expiry))
+                redis.call("HSET", poolItemsKey, itemName, join_pool_value("{ALLOCATED_SENTINEL}", "{ALLOCATED_SENTINEL}", expiry))
                 -- If we removed the current head, update head pointer
                 -- local savedHead = redis.call("GET", headKey)
                 -- if savedHead == itemName then
                 --     redis.call("SET", headKey, next or "")
                 -- end
             else
-                assert(next == "#ALLOCATED", "next item should also be allocated")
+                assert(next == "{ALLOCATED_SENTINEL}", "next item should also be allocated")
             end
         end
 
@@ -818,19 +820,13 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 return
             end
             local locked = redis.call("EXISTS", key_str(itemName)) > 0
-            if prev == "#ALLOCATED" then
+            if prev == "{ALLOCATED_SENTINEL}" then
                 if not locked then
                     push_to_tail(itemName, expiry)
                 end
             else
-                -- INV-4 cleanup: item is in the free list but a lock key
-                -- exists for it. This can happen if a soft-binding malloc
-                -- aborted partway (SET lock landed but set_item_allocated
-                -- raised on a stale chain reference). Reconcile by removing
-                -- the item from the free list — the lock holder will see
-                -- the entry as #ALLOCATED on next access. Not a fix for the
-                -- race itself, but stops the inconsistency from persisting
-                -- past the next GC pass.
+                -- Free entry with a residual lock: pull it out of the free
+                -- list so callers can't malloc a key that's still locked.
                 if locked then
                     set_item_allocated(itemName, value)
                 end
@@ -860,7 +856,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                     break  -- corrupted pointer
                 end
                 local _prev, nxt, _expiry = split_pool_value(val)
-                if nxt == "" or nxt == "#ALLOCATED" then
+                if nxt == "" or nxt == "{ALLOCATED_SENTINEL}" then
                     break -- reached tail or allocated marker
                 end
                 current = nxt
@@ -902,13 +898,7 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 val = join_pool_value(prev, next, expiry)
                 redis.call("HSET", poolItemsKey, itemName, val)
             else
-                -- Adding a brand-new key to the pool. If a residual lock key
-                -- exists for this name (e.g. from a previous incarnation
-                -- that was evicted by assign while still held — see
-                -- by-design #4 in CLAUDE.md), wipe it so the new entry
-                -- starts as a clean free node. Without this, the new entry
-                -- enters the free list while the orphan lock survives,
-                -- producing an INV-4 (free + locked) violation.
+                -- New key: wipe any residual lock so the entry starts clean.
                 redis.call("DEL", key_str(itemName))
                 push_to_tail(itemName, expiry)
             end
@@ -939,13 +929,6 @@ class RedisAllocator(RedisLockPool, Generic[U]):
 
         Raises:
             ValueError: If any key in ``keys`` violates one of the rules above.
-
-        Note for the implementer (USER TODO below):
-            The contract this method establishes is load-bearing for every
-            other invariant in the allocator. If you weaken it (e.g. silently
-            drop bad keys instead of raising), document it here AND in
-            ``extend``/``assign`` docstrings — callers expect either
-            "everything I passed went in" or "I get an exception".
         """
         for key in keys:
             if not isinstance(key, str):
@@ -954,12 +937,12 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                 )
             if key == "":
                 raise ValueError("pool key cannot be empty (collides with empty-pointer sentinel)")
-            if "||" in key:
+            if POOL_VALUE_SEP in key:
                 raise ValueError(
-                    f"pool key cannot contain '||' separator: {key!r:.80}"
+                    f"pool key cannot contain {POOL_VALUE_SEP!r} separator: {key!r:.80}"
                 )
-            if key == "#ALLOCATED":
-                raise ValueError("pool key cannot equal '#ALLOCATED' (reserved as internal sentinel)")
+            if key == ALLOCATED_SENTINEL:
+                raise ValueError(f"pool key cannot equal {ALLOCATED_SENTINEL!r} (reserved as internal sentinel)")
             if "\x00" in key:
                 raise ValueError(
                     f"pool key cannot contain NUL byte: {key!r:.80}"
@@ -1197,14 +1180,9 @@ class RedisAllocator(RedisLockPool, Generic[U]):
                     -- Cached key is valid (either not locked or in shared mode)
                     refresh_cache(cachedKey) -- Refresh the cache expiry
                     if shared == 0 then
-                        -- IMPORTANT: set_item_allocated MUST run before SET
-                        -- lock. If set_item_allocated raises (e.g. on a stale
-                        -- prev/next reference) and SET lock has already
-                        -- happened, the EVAL aborts leaving cachedKey in
-                        -- free state with a lock — INV-4 (free + locked).
-                        -- Reordering ensures: either the chain manipulation
-                        -- succeeds and we then atomically add the lock, or
-                        -- the EVAL aborts before any lock is created.
+                        -- Order matters: chain mutation must succeed before
+                        -- the lock SET, otherwise an aborted EVAL leaves a
+                        -- free entry with a lock.
                         set_item_allocated(cachedKey)
                         redis.call("SET", key_str(cachedKey), "1", "EX", timeout)
                     end
@@ -1301,18 +1279,14 @@ class RedisAllocator(RedisLockPool, Generic[U]):
     def _free_script(self):
         """Cached Lua script to free allocated keys.
 
-        Iterates through provided keys (ARGV[2...]).
-        For each key:
-        1. Deletes the corresponding lock key (`key_str(k)`) using DEL.
-        2. If the key was actually locked AND the key still belongs to this
-           pool (HEXISTS in pool hash), push it back to the tail of the free
-           list with the specified expiry (from ARGV[1] timeout).
+        Iterates through ARGV[2...]. For each key:
 
-        The HEXISTS guard prevents the "zombie key resurrection" bug where a
-        key evicted from the pool by ``assign``/``shrink`` (whose lock key
-        survives by design — see CLAUDE.md "Things that look like bugs but
-        are intentional") would be reinserted into the pool by a later
-        ``free_keys`` call from a holder unaware of the eviction.
+        1. ``DEL`` its lock key.
+        2. If the lock did exist AND the key is still a pool member
+           (``HEXISTS`` guard), push it back to the free list tail.
+
+        The ``HEXISTS`` guard ensures ``free_keys`` cannot re-insert a key
+        that ``assign``/``shrink`` has evicted from the pool.
         """
         return self.redis.register_script(f'''
         {self._lua_required_string}
