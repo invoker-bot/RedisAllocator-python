@@ -16,7 +16,7 @@ tests_require = [
     'pytest >= 7.4.3',
     'pytest-cov >= 4.1.0',
     'pytest-mock >= 3.12.0',
-    'fakeredis[lua] >= 2.36.0',
+    'fakeredis[lua] >= 2.35.1',
     'flake8 >= 6.1.0',
     'freezegun >= 1.4.0',
 ]
