@@ -4,21 +4,400 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RedisAllocator Diagnostics</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --ink: #17212b;
+      --muted: #667085;
+      --line: #d9dee7;
+      --ok: #1f8a5b;
+      --warn: #b56a00;
+      --bad: #b42318;
+      --accent: #2563eb;
+      --accent-2: #0f766e;
+      --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    .app {
+      width: min(1280px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 32px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
+    }
+
+    h2 {
+      font-size: 16px;
+      line-height: 1.25;
+    }
+
+    .identity {
+      margin-top: 6px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .badge {
+      min-width: 96px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      color: var(--muted);
+      font-weight: 700;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .badge.healthy {
+      border-color: rgba(31, 138, 91, 0.3);
+      color: var(--ok);
+    }
+
+    .badge.degraded {
+      border-color: rgba(181, 106, 0, 0.35);
+      color: var(--warn);
+    }
+
+    .badge.corrupt {
+      border-color: rgba(180, 35, 24, 0.35);
+      color: var(--bad);
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+
+    .metric {
+      min-width: 0;
+      min-height: 92px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 28px;
+      line-height: 1.1;
+      overflow-wrap: anywhere;
+    }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    section {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    ul {
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      border-top: 1px solid var(--line);
+      padding: 10px 0;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    li:first-child {
+      border-top: 0;
+    }
+
+    code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    pre {
+      max-height: 360px;
+      margin: 12px 0 0;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 12px;
+      color: #233044;
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    canvas {
+      width: 100%;
+      height: 160px;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 50%;
+      vertical-align: -1px;
+      background: var(--accent);
+    }
+
+    .legend span:nth-child(2)::before {
+      background: var(--accent-2);
+    }
+
+    .legend span:nth-child(3)::before {
+      background: var(--bad);
+    }
+
+    @media (max-width: 860px) {
+      .metric-grid,
+      .panel-grid {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body>
-  <main>
-    <h1>RedisAllocator Diagnostics</h1>
-    <p>Live snapshot source: <code>/api/snapshot</code></p>
-    <pre id="snapshot">Loading...</pre>
+  <main class="app">
+    <header data-panel="health">
+      <div>
+        <h1>RedisAllocator Diagnostics</h1>
+        <div id="identity" class="identity">/api/snapshot</div>
+      </div>
+      <div id="health" class="badge">connecting</div>
+    </header>
+
+    <div class="metric-grid" data-panel="pool">
+      <article class="metric">
+        <span>Total</span>
+        <strong id="pool-total">0</strong>
+      </article>
+      <article class="metric">
+        <span>Free</span>
+        <strong id="pool-free">0</strong>
+      </article>
+      <article class="metric">
+        <span>Locked</span>
+        <strong id="pool-locked">0</strong>
+      </article>
+      <article class="metric">
+        <span>Orphans</span>
+        <strong id="orphan-count">0</strong>
+      </article>
+    </div>
+
+    <div class="panel-grid">
+      <section data-panel="integrity">
+        <h2>Integrity</h2>
+        <ul id="violations"></ul>
+      </section>
+
+      <section data-panel="recommendations">
+        <h2>Recommendations</h2>
+        <ul id="recommendations"></ul>
+      </section>
+
+      <section data-panel="pressure">
+        <h2>Pressure</h2>
+        <canvas id="trend" width="720" height="180"></canvas>
+        <div class="legend">
+          <span>free</span>
+          <span>locked</span>
+          <span>orphans</span>
+        </div>
+        <pre id="pressure-json">{}</pre>
+      </section>
+
+      <section>
+        <h2>Redis</h2>
+        <div class="metric-grid">
+          <article class="metric">
+            <span>Memory</span>
+            <strong id="redis-memory">0</strong>
+          </article>
+          <article class="metric">
+            <span>Permanent Locks</span>
+            <strong id="permanent-locks">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="wide" data-panel="json">
+        <h2>Snapshot JSON</h2>
+        <pre id="snapshot-json">{}</pre>
+      </section>
+    </div>
   </main>
+
   <script>
+    const history = [];
+    const maxHistory = 80;
+    let fallbackTimer = null;
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function renderList(id, items, emptyText) {
+      const list = document.getElementById(id);
+      list.textContent = '';
+      const values = items && items.length ? items : [emptyText];
+      values.forEach(item => {
+        const row = document.createElement('li');
+        if (typeof item === 'string') {
+          row.textContent = item;
+        } else {
+          row.textContent = `${item.severity || 'info'} ${item.code || ''} ${item.message || JSON.stringify(item)}`.trim();
+        }
+        list.appendChild(row);
+      });
+    }
+
+    function drawTrend() {
+      const canvas = document.getElementById('trend');
+      const context = canvas.getContext('2d');
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.strokeStyle = '#d9dee7';
+      context.beginPath();
+      context.moveTo(0, canvas.height - 24);
+      context.lineTo(canvas.width, canvas.height - 24);
+      context.stroke();
+
+      const maxTotal = Math.max(...history.map(item => Math.max(item.free, item.locked, item.orphans)), 1);
+      const series = [
+        ['free', '#2563eb'],
+        ['locked', '#0f766e'],
+        ['orphans', '#b42318'],
+      ];
+      series.forEach(([field, color]) => {
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.beginPath();
+        history.forEach((item, index) => {
+          const x = history.length <= 1 ? 0 : index / (maxHistory - 1) * canvas.width;
+          const y = canvas.height - (item[field] / maxTotal) * (canvas.height - 18) - 9;
+          if (index === 0) context.moveTo(x, y);
+          else context.lineTo(x, y);
+        });
+        context.stroke();
+      });
+    }
+
+    function render(payload) {
+      const health = document.getElementById('health');
+      health.textContent = payload.health;
+      health.className = `badge ${payload.health}`;
+      setText('identity', `${payload.identity.prefix}|${payload.identity.suffix} shared=${payload.identity.shared}`);
+      setText('pool-total', payload.pool.total);
+      setText('pool-free', payload.pool.free);
+      setText('pool-locked', payload.pool.locked);
+      setText('orphan-count', payload.orphans.count);
+      setText('permanent-locks', payload.pool.permanent_locks);
+      setText('redis-memory', payload.redis.used_memory);
+      renderList('violations', payload.integrity.violations, 'No integrity violations');
+      renderList('recommendations', payload.recommendations, 'No recommendations');
+      setText('pressure-json', JSON.stringify(payload.pressure, null, 2));
+      setText('snapshot-json', JSON.stringify(payload, null, 2));
+      history.push({ free: payload.pool.free, locked: payload.pool.locked, orphans: payload.orphans.count });
+      while (history.length > maxHistory) history.shift();
+      drawTrend();
+    }
+
     async function refresh() {
       const response = await fetch('/api/snapshot');
-      const payload = await response.json();
-      document.getElementById('snapshot').textContent = JSON.stringify(payload, null, 2);
+      render(await response.json());
     }
-    refresh();
-    setInterval(refresh, 1000);
+
+    function startPolling() {
+      if (fallbackTimer) return;
+      refresh();
+      fallbackTimer = setInterval(refresh, 1000);
+    }
+
+    if (window.EventSource) {
+      const source = new EventSource('/api/events');
+      source.onmessage = event => render(JSON.parse(event.data));
+      source.onerror = () => startPolling();
+    } else {
+      startPolling();
+    }
   </script>
 </body>
 </html>

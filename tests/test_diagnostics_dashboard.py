@@ -2,6 +2,7 @@
 
 import json
 import threading
+from pathlib import Path
 from urllib.request import urlopen
 
 from redis_allocator.allocator import RedisAllocator
@@ -45,3 +46,13 @@ def test_dashboard_serves_html(redis_client):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_dashboard_html_has_live_diagnostic_panels():
+    html = Path("redis_allocator/diagnostics/static/dashboard.html").read_text(encoding="utf-8")
+
+    assert 'data-panel="health"' in html
+    assert 'data-panel="pool"' in html
+    assert 'data-panel="integrity"' in html
+    assert 'data-panel="pressure"' in html
+    assert 'data-panel="recommendations"' in html
