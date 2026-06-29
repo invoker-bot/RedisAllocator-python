@@ -1,0 +1,1488 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Index &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+      <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.1/dist/mermaid.esm.min.mjs";
+
+
+
+
+
+const initStyles = () => {
+    const defaultStyle = document.createElement('style');
+    defaultStyle.textContent = `pre.mermaid {
+    /* Same as .mermaid-container > pre */
+    display: block;
+    width: 100%;
+}
+
+pre.mermaid > svg {
+    /* Same as .mermaid-container > pre > svg */
+    height: 500px;
+    width: 100%;
+    max-width: 100% !important;
+}`;
+    document.head.appendChild(defaultStyle);
+
+    const fullscreenStyle = document.createElement('style');
+    fullscreenStyle.textContent = `.mermaid-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+}
+
+.mermaid-container > pre {
+    display: block;
+    width: 100%;
+}
+
+.mermaid-container > pre > svg {
+    height: 500px;
+    width: 100%;
+    max-width: 100% !important;
+}
+
+.mermaid-fullscreen-btn {
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    color: #333;
+}
+
+.mermaid-fullscreen-btn:hover {
+    opacity: 100% !important;
+    background: rgba(255, 255, 255, 1);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    transform: scale(1.1);
+}
+
+.mermaid-fullscreen-btn.dark-theme {
+    background: rgba(50, 50, 50, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #e0e0e0;
+}
+
+.mermaid-fullscreen-btn.dark-theme:hover {
+    background: rgba(60, 60, 60, 1);
+    box-shadow: 0 3px 10px rgba(255, 255, 255, 0.2);
+}
+
+.mermaid-fullscreen-modal {
+    display: none;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 95vw;
+    height: 100vh;
+    background: rgba(255, 255, 255, 0.98);
+    z-index: 9999;
+    padding: 20px;
+    overflow: auto;
+}
+
+.mermaid-fullscreen-modal.dark-theme {
+    background: rgba(0, 0, 0, 0.98);
+}
+
+.mermaid-fullscreen-modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-container-fullscreen {
+    position: relative;
+    width: 95vw;
+    height: 90vh;
+    max-width: 95vw;
+    max-height: 90vh;
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-container-fullscreen.dark-theme {
+    background: #1a1a1a;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+}
+
+.mermaid-container-fullscreen pre.mermaid {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-container-fullscreen .mermaid svg {
+    height: 100% !important;
+    width: 100% !important;
+    cursor: grab;
+}
+
+.mermaid-fullscreen-close {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s;
+    font-size: 24px;
+    line-height: 1;
+    color: #333;
+}
+
+.mermaid-fullscreen-close:hover {
+    background: white;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    transform: scale(1.1);
+}
+
+.mermaid-fullscreen-close.dark-theme {
+    background: rgba(50, 50, 50, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+}
+
+.mermaid-fullscreen-close.dark-theme:hover {
+    background: rgba(60, 60, 60, 1);
+    box-shadow: 0 6px 16px rgba(255, 255, 255, 0.2);
+}
+
+.mermaid-fullscreen-modal .mermaid-fullscreen-btn {
+    display: none !important;
+}`;
+    document.head.appendChild(fullscreenStyle);
+}
+
+// Detect if page has dark background
+const isDarkTheme = () => {
+    // We use a set of heuristics:
+    // 1. Check for common dark mode classes or attributes
+    // 2. Check computed background color brightness
+    if (document.documentElement.classList.contains('dark') ||
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        document.body.classList.contains('dark') ||
+        document.body.getAttribute('data-theme') === 'dark') {
+        // console.log("Dark theme detected via class/attribute");
+        return true;
+    }
+    if (document.documentElement.classList.contains('light') ||
+        document.documentElement.getAttribute('data-theme') === 'light' ||
+        document.body.classList.contains('light') ||
+        document.body.getAttribute('data-theme') === 'light') {
+        // console.log("Light theme detected via class/attribute");
+        return false;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // console.log("Dark theme detected via prefers-color-scheme");
+        return true;
+    }
+    const bgColor = window.getComputedStyle(document.body).backgroundColor;
+    const match = bgColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        // console.log("Background color brightness:", brightness);
+        return brightness < 128;
+    }
+    // console.log("No dark or light theme detected, defaulting to light theme");
+    return false;
+};
+
+let darkTheme = isDarkTheme();
+let modal = null;
+let modalContent = null;
+let previousScrollOffset = [window.scrollX, window.scrollY];
+
+const runMermaid = async (rerun) => {
+    console.log("Running mermaid diagrams, rerun =", rerun);
+    // clear all existing mermaid charts
+    let all_mermaids = document.querySelectorAll(".mermaid");
+
+    if (rerun) {
+        all_mermaids.forEach((el) => {
+            if(!el.hasAttribute("data-original-code")) {
+                // store original code
+                // console.log(`Storing original code for first run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+            if(el.getAttribute("data-processed") === "true") {
+                // remove and restore original
+                el.removeAttribute("data-processed");
+                // console.log(`Restoring original code for re-run: `, el.getAttribute('data-original-code'));
+                el.innerHTML = el.getAttribute('data-original-code');
+            } else {
+                // store original code
+                // console.log(`Storing original code for re-run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+        });
+        await mermaid.run();
+    }
+
+    all_mermaids = document.querySelectorAll(".mermaid");
+    const mermaids_processed = document.querySelectorAll(".mermaid[data-processed='true']");
+
+    if ("False" === "True") {
+        const mermaids_to_add_zoom = -1 === -1 ? all_mermaids.length : -1;
+        if(mermaids_to_add_zoom > 0) {
+            var svgs = d3.selectAll("");
+            if(all_mermaids.length !== mermaids_processed.length) {
+                setTimeout(() => runMermaid(false), 200);
+                return;
+            } else if(svgs.size() !== mermaids_to_add_zoom) {
+                setTimeout(() => runMermaid(false), 200);
+                return;
+            } else {
+                svgs.each(function() {
+                    var svg = d3.select(this);
+                    svg.html("<g class='wrapper'>" + svg.html() + "</g>");
+                    var inner = svg.select("g");
+                    var zoom = d3.zoom().on("zoom", function(event) {
+                        inner.attr("transform", event.transform);
+                    });
+                    svg.call(zoom);
+                });
+            }
+        }
+    } else if(all_mermaids.length !== mermaids_processed.length) {
+        // Wait for mermaid to process all diagrams
+        setTimeout(() => runMermaid(false), 200);
+        return;
+    }
+
+    // Stop here if not adding fullscreen capability
+    if ("True" !== "True") return;
+
+    if (modal !== null ) {
+        // Destroy existing modal
+        modal.remove();
+        modal = null;
+        modalContent = null;
+    }
+
+    modal = document.createElement('div');
+    modal.className = 'mermaid-fullscreen-modal' + (darkTheme ? ' dark-theme' : '');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Fullscreen diagram viewer');
+    modal.innerHTML = `
+        <button class="mermaid-fullscreen-close${darkTheme ? ' dark-theme' : ''}" aria-label="Close fullscreen">✕</button>
+        <div class="mermaid-container-fullscreen${darkTheme ? ' dark-theme' : ''}"></div>
+    `;
+    document.body.appendChild(modal);
+
+    modalContent = modal.querySelector('.mermaid-container-fullscreen');
+    const closeBtn = modal.querySelector('.mermaid-fullscreen-close');
+
+    const closeModal = () => {
+        modal.classList.remove('active');
+        modalContent.innerHTML = '';
+        document.body.style.overflow = ''
+        window.scrollTo({left: previousScrollOffset[0], top: previousScrollOffset[1], behavior: 'instant'});
+    };
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) {
+            closeModal();
+        }
+    });
+
+    document.querySelectorAll('.mermaid').forEach((mermaidDiv) => {
+        if (mermaidDiv.parentNode.classList.contains('mermaid-container') ||
+            mermaidDiv.closest('.mermaid-fullscreen-modal')) {
+            // Already processed, adjust button class if needed
+            const existingBtn = mermaidDiv.parentNode.querySelector('.mermaid-fullscreen-btn');
+            if (existingBtn) {
+                existingBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+            }
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+        mermaidDiv.parentNode.insertBefore(container, mermaidDiv);
+        container.appendChild(mermaidDiv);
+
+        const fullscreenBtn = document.createElement('button');
+        fullscreenBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+        fullscreenBtn.setAttribute('aria-label', 'View diagram in fullscreen');
+        fullscreenBtn.textContent = '⛶';
+        fullscreenBtn.style.opacity = '50%';
+
+        // Calculate dynamic position based on diagram's margin and padding
+        const diagramStyle = window.getComputedStyle(mermaidDiv);
+        const marginTop = parseFloat(diagramStyle.marginTop) || 0;
+        const marginRight = parseFloat(diagramStyle.marginRight) || 0;
+        const paddingTop = parseFloat(diagramStyle.paddingTop) || 0;
+        const paddingRight = parseFloat(diagramStyle.paddingRight) || 0;
+        fullscreenBtn.style.top = `${marginTop + paddingTop + 4}px`;
+        fullscreenBtn.style.right = `${marginRight + paddingRight + 4}px`;
+
+        fullscreenBtn.addEventListener('click', () => {
+            previousScrollOffset = [window.scroll, window.scrollY];
+            const clone = mermaidDiv.cloneNode(true);
+            modalContent.innerHTML = '';
+            modalContent.appendChild(clone);
+
+            const svg = clone.querySelector('svg');
+            if (svg) {
+                svg.removeAttribute('width');
+                svg.removeAttribute('height');
+                svg.style.width = '100%';
+                svg.style.height = 'auto';
+                svg.style.maxWidth = '100%';
+                svg.style.sdisplay = 'block';
+
+                if ("False" === "True") {
+                    setTimeout(() => {
+                        const g = svg.querySelector('g');
+                        if (g) {
+                            var svgD3 = d3.select(svg);
+                            svgD3.html("<g class='wrapper'>" + svgD3.html() + "</g>");
+                            var inner = svgD3.select("g");
+                            var zoom = d3.zoom().on("zoom", function(event) {
+                                inner.attr("transform", event.transform);
+                            });
+                            svgD3.call(zoom);
+                        }
+                    }, 100);
+                }
+            }
+
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+        container.appendChild(fullscreenBtn);
+    });
+};
+
+const load = async () => {
+    initStyles();
+
+    await runMermaid(true);
+
+    const reRunIfThemeChanges = async () => {
+        const newDarkTheme = isDarkTheme();
+        if (newDarkTheme !== darkTheme) {
+            darkTheme = newDarkTheme;
+            console.log("Theme change detected, re-running mermaid with", darkTheme ? "dark" : "default", "theme");
+            await mermaid.initialize(
+                {...JSON.parse(
+                    `{"startOnLoad": false}`
+                ),
+                ...{ darkMode: darkTheme, theme: darkTheme ? 'dark' : 'default' },
+                }
+            );
+            await runMermaid(true);
+        }
+    };
+
+    // Update theme classes when theme changes
+    const themeObserver = new MutationObserver(reRunIfThemeChanges);
+    themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+    themeObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+};
+
+
+
+
+
+console.log("Initializing mermaid with", darkTheme ? "dark" : "default", "theme");
+mermaid.initialize(
+    {...JSON.parse(
+        `{"startOnLoad": false}`
+    ),
+    ...{ darkMode: darkTheme, theme: darkTheme ? 'dark' : 'default' },
+    }
+);
+
+window.addEventListener("load", load);
+window.runMermaid = runMermaid;</script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="#" />
+    <link rel="search" title="Search" href="search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Index</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+
+<h1 id="index">Index</h1>
+
+<div class="genindex-jumpbox">
+ <a href="#_"><strong>_</strong></a>
+ | <a href="#A"><strong>A</strong></a>
+ | <a href="#B"><strong>B</strong></a>
+ | <a href="#C"><strong>C</strong></a>
+ | <a href="#D"><strong>D</strong></a>
+ | <a href="#E"><strong>E</strong></a>
+ | <a href="#F"><strong>F</strong></a>
+ | <a href="#G"><strong>G</strong></a>
+ | <a href="#H"><strong>H</strong></a>
+ | <a href="#I"><strong>I</strong></a>
+ | <a href="#K"><strong>K</strong></a>
+ | <a href="#L"><strong>L</strong></a>
+ | <a href="#M"><strong>M</strong></a>
+ | <a href="#N"><strong>N</strong></a>
+ | <a href="#O"><strong>O</strong></a>
+ | <a href="#P"><strong>P</strong></a>
+ | <a href="#Q"><strong>Q</strong></a>
+ | <a href="#R"><strong>R</strong></a>
+ | <a href="#S"><strong>S</strong></a>
+ | <a href="#T"><strong>T</strong></a>
+ | <a href="#U"><strong>U</strong></a>
+ | <a href="#V"><strong>V</strong></a>
+ 
+</div>
+<h2 id="_">_</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.__call__">__call__() (redis_allocator.allocator.RedisAllocatorUpdater method)</a>
+</li>
+      <li><a href="api/allocator.html#id40">__contains__() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.__contains__">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.__contains__">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.__contains__">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#id23">__enter__() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.__enter__">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id24">__exit__() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.__exit__">[1]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.__init__">__init__() (redis_allocator.allocator.DefaultRedisAllocatorPolicy method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id33">(redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.__init__">[1]</a>
+</li>
+        <li><a href="api/allocator.html#id14">(redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.__init__">[1]</a>
+</li>
+        <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.__init__">(redis_allocator.allocator.RedisAllocatorUpdater method)</a>
+</li>
+        <li><a href="api/allocator.html#id1">(redis_allocator.allocator.RedisThreadHealthCheckPool method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.__init__">[1]</a>
+</li>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.__init__">(redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot method)</a>
+</li>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics.__init__">(redis_allocator.diagnostics.models.BindingDiagnostics method)</a>
+</li>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.OrphanDiagnostics.__init__">(redis_allocator.diagnostics.models.OrphanDiagnostics method)</a>
+</li>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.__init__">(redis_allocator.diagnostics.models.PoolDiagnostics method)</a>
+</li>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PressureDiagnostics.__init__">(redis_allocator.diagnostics.models.PressureDiagnostics method)</a>
+</li>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.RedisAllocatorDiagnostics.__init__">(redis_allocator.diagnostics.RedisAllocatorDiagnostics method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.__init__">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.__init__">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.__init__">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.__init__">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.__init__">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+        <li><a href="api/task_queue.html#id47">(redis_allocator.task_queue.RedisTask method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.__init__">[1]</a>
+</li>
+        <li><a href="api/task_queue.html#id55">(redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.__init__">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.__iter__">__iter__() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.__iter__">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.__iter__">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.__len__">__len__() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.__len__">(redis_allocator.allocator.RedisAllocatorUpdater method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.__len__">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.__len__">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/lock.html#redis_allocator.lock.LockStatus.__new__">__new__() (redis_allocator.lock.LockStatus method)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.ThreadLock._lock">_lock (redis_allocator.lock.ThreadLock attribute)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool._lock">(redis_allocator.lock.ThreadLockPool attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/lock.html#redis_allocator.lock.ThreadLock._locks">_locks (redis_allocator.lock.ThreadLock attribute)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool._pool">_pool (redis_allocator.lock.ThreadLockPool attribute)</a>
+</li>
+      <li><a href="api/task_queue.html#id35">_save (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask._save">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="A">A</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.allocated_markers">allocated_markers (redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.ALLOCATED_SENTINEL">ALLOCATED_SENTINEL (in module redis_allocator.allocator)</a>
+</li>
+      <li><a href="api/allocator.html#id15">allocator (redis_allocator.allocator.RedisAllocatorObject attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.allocator">[1]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PressureDiagnostics.allocator_keyspace_delta">allocator_keyspace_delta (redis_allocator.diagnostics.models.PressureDiagnostics attribute)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot">AllocatorDiagnosticsSnapshot (class in redis_allocator.diagnostics.models)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id38">assign() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.assign">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.assign">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.assign">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.assign">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/task_queue.html#id13">Auto (redis_allocator.task_queue.TaskExecutePolicy attribute)</a>, <a href="api/task_queue.html#id19">[1]</a>, <a href="api/task_queue.html#id24">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy.Auto">[3]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="B">B</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/lock.html#redis_allocator.lock.BaseLock">BaseLock (class in redis_allocator.lock)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool">BaseLockPool (class in redis_allocator.lock)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics">BindingDiagnostics (class in redis_allocator.diagnostics.models)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.bindings">bindings (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/task_queue.html#id56">build_task() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.build_task">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="C">C</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.check_health">check_health() (redis_allocator.allocator.RedisAllocatorPolicy method)</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.check_health_once">check_health_once() (redis_allocator.allocator.RedisAllocatorPolicy method)</a>
+</li>
+      <li><a href="api/allocator.html#id35">clear() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.clear">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.clear">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.clear">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.clear">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id9">close() (redis_allocator.allocator.RedisAllocatableClass method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.close">[1]</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id21">(redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.close">[1]</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PressureDiagnostics.command_deltas">command_deltas (redis_allocator.diagnostics.models.PressureDiagnostics attribute)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.OrphanDiagnostics.count">count (redis_allocator.diagnostics.models.OrphanDiagnostics attribute)</a>
+</li>
+      <li><a href="api/task_queue.html#id33">current_progress (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id43">[1]</a>, <a href="api/task_queue.html#id7">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.current_progress">[3]</a>
+</li>
+      <li><a href="api/allocator.html#id2">current_thread_id (redis_allocator.allocator.RedisThreadHealthCheckPool property)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.current_thread_id">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="D">D</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy">DefaultRedisAllocatorPolicy (class in redis_allocator.allocator)</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.deleq">deleq() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.deleq">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.deleq">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.deleq">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.delge">delge() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.delge">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.delge">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.delge">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.delgt">delgt() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.delgt">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.delgt">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.delgt">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.delle">delle() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.delle">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.delle">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.delle">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.dellt">dellt() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.dellt">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.dellt">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.dellt">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.delne">delne() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.delne">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.delne">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.delne">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="E">E</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id52">eps (redis_allocator.allocator.RedisAllocator attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.eps">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#id4">(redis_allocator.lock.BaseLock attribute)</a>, <a href="api/lock.html#redis_allocator.lock.BaseLock.eps">[1]</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.eps">(redis_allocator.lock.BaseLockPool attribute)</a>
+</li>
+        <li><a href="api/lock.html#id3">(redis_allocator.lock.RedisLock attribute)</a>, <a href="api/lock.html#redis_allocator.lock.RedisLock.eps">[1]</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.eps">(redis_allocator.lock.RedisLockPool attribute)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.eps">(redis_allocator.lock.ThreadLock attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/lock.html#redis_allocator.lock.LockStatus.ERROR">ERROR (redis_allocator.lock.LockStatus attribute)</a>
+</li>
+      <li><a href="api/task_queue.html#id31">error (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id41">[1]</a>, <a href="api/task_queue.html#id5">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.error">[3]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/task_queue.html#id58">execute_task_locally() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.execute_task_locally">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id57">execute_task_remotely() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.execute_task_remotely">[1]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.expired_entries">expired_entries (redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      <li><a href="api/task_queue.html#id29">expiry (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id3">[1]</a>, <a href="api/task_queue.html#id39">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.expiry">[3]</a>
+</li>
+      <li><a href="api/allocator.html#id36">extend() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.extend">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.extend">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.extend">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.extend">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="F">F</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater.fetch">fetch() (redis_allocator.allocator.RedisAllocatorUpdater method)</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.finalize">finalize() (redis_allocator.allocator.DefaultRedisAllocatorPolicy method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id5">(redis_allocator.allocator.RedisThreadHealthCheckPool method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.finalize">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.free">free (redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.LockStatus.FREE">FREE (redis_allocator.lock.LockStatus attribute)</a>
+</li>
+      <li><a href="api/allocator.html#id47">free() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.free">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id46">free_keys() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.free_keys">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="G">G</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id53">gc() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.gc">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id48">get_free_list() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.get_free_list">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id43">get_soft_bind() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.get_soft_bind">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id61">get_task() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.get_task">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="H">H</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/task_queue.html#id62">has_task() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.has_task">[1]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.health">health (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.health_check">health_check() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.health_check">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.health_check">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="I">I</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/task_queue.html#id0">id (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id26">[1]</a>, <a href="api/task_queue.html#id36">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.id">[3]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.identity">identity (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.initialize">initialize() (redis_allocator.allocator.DefaultRedisAllocatorPolicy method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.initialize">(redis_allocator.allocator.RedisAllocatorPolicy method)</a>
+</li>
+        <li><a href="api/allocator.html#id3">(redis_allocator.allocator.RedisThreadHealthCheckPool method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.initialize">[1]</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.integrity">integrity (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/task_queue.html#id53">interval (redis_allocator.task_queue.RedisTaskQueue attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.interval">[1]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PressureDiagnostics.interval_seconds">interval_seconds (redis_allocator.diagnostics.models.PressureDiagnostics attribute)</a>
+</li>
+      <li><a href="api/allocator.html#id10">is_healthy() (redis_allocator.allocator.RedisAllocatableClass method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.is_healthy">[1]</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id25">(redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.is_healthy">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.is_locked">is_locked() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.is_locked">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.is_locked">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.is_locked">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.is_locked">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.items_locked_status">items_locked_status() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.items_locked_status">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.items_locked_status">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="K">K</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id16">key (redis_allocator.allocator.RedisAllocatorObject attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.key">[1]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.key_status">key_status() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.key_status">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.key_status">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.key_status">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.key_status">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id39">keys() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.keys">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.keys">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.keys">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.keys">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="L">L</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/task_queue.html#id63">listen() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.listen">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id15">Local (redis_allocator.task_queue.TaskExecutePolicy attribute)</a>, <a href="api/task_queue.html#id20">[1]</a>, <a href="api/task_queue.html#id9">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy.Local">[3]</a>
+</li>
+      <li><a href="api/task_queue.html#id11">LocalFirst (redis_allocator.task_queue.TaskExecutePolicy attribute)</a>, <a href="api/task_queue.html#id17">[1]</a>, <a href="api/task_queue.html#id22">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy.LocalFirst">[3]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.lock">lock() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.lock">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.lock">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.lock">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.lock">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.lock_value">lock_value() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.lock_value">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.lock_value">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.lock_value">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.lock_value">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.locked">locked (redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.LockStatus.LOCKED">LOCKED (redis_allocator.lock.LockStatus attribute)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.LockStatus">LockStatus (class in redis_allocator.lock)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="M">M</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.malloc">malloc() (redis_allocator.allocator.DefaultRedisAllocatorPolicy method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id45">(redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.malloc">[1]</a>
+</li>
+        <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.malloc">(redis_allocator.allocator.RedisAllocatorPolicy method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#id44">malloc_key() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.malloc_key">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    module
+
+      <ul>
+        <li><a href="api/allocator.html#module-0">redis_allocator.allocator</a>, <a href="api/allocator.html#module-redis_allocator.allocator">[1]</a>
+</li>
+        <li><a href="api/diagnostics.html#module-redis_allocator.diagnostics">redis_allocator.diagnostics</a>
+</li>
+        <li><a href="api/lock.html#module-redis_allocator.lock">redis_allocator.lock</a>
+</li>
+        <li><a href="api/task_queue.html#module-0">redis_allocator.task_queue</a>, <a href="api/task_queue.html#module-redis_allocator.task_queue">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="N">N</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id11">name (redis_allocator.allocator.RedisAllocatableClass property)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.name">[1]</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id31">(redis_allocator.allocator.RedisAllocatorObject property)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.name">[1]</a>
+</li>
+        <li><a href="api/task_queue.html#id1">(redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id27">[1]</a>, <a href="api/task_queue.html#id37">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.name">[3]</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="O">O</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id17">obj (redis_allocator.allocator.RedisAllocatorObject attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.obj">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id34">object_key() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.object_key">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id8">open() (redis_allocator.allocator.RedisAllocatableClass method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.open">[1]</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id20">(redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.open">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.OrphanDiagnostics">OrphanDiagnostics (class in redis_allocator.diagnostics.models)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.orphans">orphans (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="P">P</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id18">params (redis_allocator.allocator.RedisAllocatorObject attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.params">[1]</a>
+
+      <ul>
+        <li><a href="api/task_queue.html#id2">(redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id28">[1]</a>, <a href="api/task_queue.html#id38">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.params">[3]</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.permanent_locks">permanent_locks (redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.pool">pool (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.POOL_VALUE_SEP">POOL_VALUE_SEP (in module redis_allocator.allocator)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics">PoolDiagnostics (class in redis_allocator.diagnostics.models)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#id50">prefix (redis_allocator.allocator.RedisAllocator attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.prefix">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#id1">(redis_allocator.lock.RedisLock attribute)</a>, <a href="api/lock.html#redis_allocator.lock.RedisLock.prefix">[1]</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.prefix">(redis_allocator.lock.RedisLockPool attribute)</a>
+</li>
+        <li><a href="api/task_queue.html#id50">(redis_allocator.task_queue.RedisTaskQueue attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.prefix">[1]</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.pressure">pressure (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PressureDiagnostics">PressureDiagnostics (class in redis_allocator.diagnostics.models)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="Q">Q</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/task_queue.html#id64">query() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.query">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="R">R</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.reclaimable">reclaimable (redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.recommendations">recommendations (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/allocator.html#id49">redis (redis_allocator.allocator.RedisAllocator attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.redis">[1]</a>
+
+      <ul>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.redis">(redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+        <li><a href="api/lock.html#id0">(redis_allocator.lock.RedisLock attribute)</a>, <a href="api/lock.html#redis_allocator.lock.RedisLock.redis">[1]</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.redis">(redis_allocator.lock.RedisLockPool attribute)</a>
+</li>
+        <li><a href="api/task_queue.html#id49">(redis_allocator.task_queue.RedisTaskQueue attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.redis">[1]</a>
+</li>
+      </ul></li>
+      <li>
+    redis_allocator.allocator
+
+      <ul>
+        <li><a href="api/allocator.html#module-0">module</a>, <a href="api/allocator.html#module-redis_allocator.allocator">[1]</a>
+</li>
+      </ul></li>
+      <li>
+    redis_allocator.diagnostics
+
+      <ul>
+        <li><a href="api/diagnostics.html#module-redis_allocator.diagnostics">module</a>
+</li>
+      </ul></li>
+      <li>
+    redis_allocator.lock
+
+      <ul>
+        <li><a href="api/lock.html#module-redis_allocator.lock">module</a>
+</li>
+      </ul></li>
+      <li>
+    redis_allocator.task_queue
+
+      <ul>
+        <li><a href="api/task_queue.html#module-0">module</a>, <a href="api/task_queue.html#module-redis_allocator.task_queue">[1]</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PressureDiagnostics.redis_ops_per_sec">redis_ops_per_sec (redis_allocator.diagnostics.models.PressureDiagnostics attribute)</a>
+</li>
+      <li><a href="api/allocator.html#id6">RedisAllocatableClass (class in redis_allocator.allocator)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id32">RedisAllocator (class in redis_allocator.allocator)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator">[1]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.RedisAllocatorDiagnostics">RedisAllocatorDiagnostics (class in redis_allocator.diagnostics)</a>
+</li>
+      <li><a href="api/allocator.html#id13">RedisAllocatorObject (class in redis_allocator.allocator)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject">[1]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy">RedisAllocatorPolicy (class in redis_allocator.allocator)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorUpdater">RedisAllocatorUpdater (class in redis_allocator.allocator)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.RedisLock">RedisLock (class in redis_allocator.lock)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool">RedisLockPool (class in redis_allocator.lock)</a>
+</li>
+      <li><a href="api/task_queue.html#id25">RedisTask (class in redis_allocator.task_queue)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id48">RedisTaskQueue (class in redis_allocator.task_queue)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id0">RedisThreadHealthCheckPool (class in redis_allocator.allocator)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id28">refresh() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.refresh">[1]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.refresh_pool">refresh_pool() (redis_allocator.allocator.DefaultRedisAllocatorPolicy method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.refresh_pool">(redis_allocator.allocator.RedisAllocatorPolicy method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.DefaultRedisAllocatorPolicy.refresh_pool_all">refresh_pool_all() (redis_allocator.allocator.DefaultRedisAllocatorPolicy method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorPolicy.refresh_pool_all">(redis_allocator.allocator.RedisAllocatorPolicy method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#id29">refresh_until_healthy() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.refresh_until_healthy">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id22">release() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.release">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id10">Remote (redis_allocator.task_queue.TaskExecutePolicy attribute)</a>, <a href="api/task_queue.html#id16">[1]</a>, <a href="api/task_queue.html#id21">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy.Remote">[3]</a>
+</li>
+      <li><a href="api/task_queue.html#id12">RemoteFirst (redis_allocator.task_queue.TaskExecutePolicy attribute)</a>, <a href="api/task_queue.html#id18">[1]</a>, <a href="api/task_queue.html#id23">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy.RemoteFirst">[3]</a>
+</li>
+      <li><a href="api/task_queue.html#id30">result (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id4">[1]</a>, <a href="api/task_queue.html#id40">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.result">[3]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.rlock">rlock() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.rlock">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.rlock">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.rlock">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.rlock">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="S">S</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics.samples">samples (redis_allocator.diagnostics.models.BindingDiagnostics attribute)</a>
+
+      <ul>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.OrphanDiagnostics.samples">(redis_allocator.diagnostics.models.OrphanDiagnostics attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/task_queue.html#id45">save() (redis_allocator.task_queue.RedisTask method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.save">[1]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics.scanned">scanned (redis_allocator.diagnostics.models.BindingDiagnostics attribute)</a>
+
+      <ul>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.OrphanDiagnostics.scanned">(redis_allocator.diagnostics.models.OrphanDiagnostics attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#id7">set_config() (redis_allocator.allocator.RedisAllocatableClass method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.set_config">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id26">set_healthy() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.set_healthy">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id59">set_queue_listened() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.set_queue_listened">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id60">set_task() (redis_allocator.task_queue.RedisTaskQueue method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.set_task">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id27">set_unhealthy() (redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.set_unhealthy">[1]</a>
+</li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.seteq">seteq() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.seteq">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.seteq">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.seteq">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.setge">setge() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.setge">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.setge">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.setge">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.setgt">setgt() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.setgt">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.setgt">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.setgt">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.setle">setle() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.setle">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.setle">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.setle">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.setlt">setlt() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.setlt">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.setlt">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.setlt">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.setne">setne() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.setne">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.setne">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.setne">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#id37">shrink() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.shrink">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.shrink">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.shrink">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool.shrink">(redis_allocator.lock.ThreadLockPool method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.RedisAllocatorDiagnostics.snapshot">snapshot() (redis_allocator.diagnostics.RedisAllocatorDiagnostics method)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.RedisAllocatorDiagnostics.snapshot_json">snapshot_json() (redis_allocator.diagnostics.RedisAllocatorDiagnostics method)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics.stale">stale (redis_allocator.diagnostics.models.BindingDiagnostics attribute)</a>
+</li>
+      <li><a href="api/allocator.html#id51">suffix (redis_allocator.allocator.RedisAllocator attribute)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.suffix">[1]</a>
+
+      <ul>
+        <li><a href="api/lock.html#id2">(redis_allocator.lock.RedisLock attribute)</a>, <a href="api/lock.html#redis_allocator.lock.RedisLock.suffix">[1]</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.suffix">(redis_allocator.lock.RedisLockPool attribute)</a>
+</li>
+        <li><a href="api/task_queue.html#id51">(redis_allocator.task_queue.RedisTaskQueue attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.suffix">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="T">T</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/task_queue.html#id54">task_fn (redis_allocator.task_queue.RedisTaskQueue attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.task_fn">[1]</a>
+</li>
+      <li><a href="api/task_queue.html#id14">TaskExecutePolicy (class in redis_allocator.task_queue)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.TaskExecutePolicy">[1]</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.ThreadLock">ThreadLock (class in redis_allocator.lock)</a>
+</li>
+      <li><a href="api/lock.html#redis_allocator.lock.ThreadLockPool">ThreadLockPool (class in redis_allocator.lock)</a>
+</li>
+      <li><a href="api/task_queue.html#id52">timeout (redis_allocator.task_queue.RedisTaskQueue attribute)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTaskQueue.timeout">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.timestamp">timestamp (redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot attribute)</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics.total">total (redis_allocator.diagnostics.models.BindingDiagnostics attribute)</a>
+
+      <ul>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.PoolDiagnostics.total">(redis_allocator.diagnostics.models.PoolDiagnostics attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/task_queue.html#id34">total_progress (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id44">[1]</a>, <a href="api/task_queue.html#id8">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.total_progress">[3]</a>
+</li>
+      <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.BindingDiagnostics.truncated">truncated (redis_allocator.diagnostics.models.BindingDiagnostics attribute)</a>
+
+      <ul>
+        <li><a href="api/diagnostics.html#redis_allocator.diagnostics.models.OrphanDiagnostics.truncated">(redis_allocator.diagnostics.models.OrphanDiagnostics attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="U">U</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/lock.html#redis_allocator.lock.LockStatus.UNAVAILABLE">UNAVAILABLE (redis_allocator.lock.LockStatus attribute)</a>
+</li>
+      <li><a href="api/allocator.html#id42">unbind_soft_bind() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.unbind_soft_bind">[1]</a>
+</li>
+      <li><a href="api/allocator.html#id12">unique_id (redis_allocator.allocator.RedisAllocatableClass property)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatableClass.unique_id">[1]</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id30">(redis_allocator.allocator.RedisAllocatorObject property)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.unique_id">[1]</a>
+</li>
+      </ul></li>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.unlock">unlock() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.unlock">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.unlock">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.unlock">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.unlock">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.update">update() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/allocator.html#id19">(redis_allocator.allocator.RedisAllocatorObject method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocatorObject.update">[1]</a>
+</li>
+        <li><a href="api/allocator.html#id4">(redis_allocator.allocator.RedisThreadHealthCheckPool method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisThreadHealthCheckPool.update">[1]</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLock.update">(redis_allocator.lock.BaseLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLock.update">(redis_allocator.lock.RedisLock method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.update">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.ThreadLock.update">(redis_allocator.lock.ThreadLock method)</a>
+</li>
+        <li><a href="api/task_queue.html#id46">(redis_allocator.task_queue.RedisTask method)</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.update">[1]</a>
+</li>
+      </ul></li>
+      <li><a href="api/task_queue.html#id32">update_progress_time (redis_allocator.task_queue.RedisTask attribute)</a>, <a href="api/task_queue.html#id42">[1]</a>, <a href="api/task_queue.html#id6">[2]</a>, <a href="api/task_queue.html#redis_allocator.task_queue.RedisTask.update_progress_time">[3]</a>
+</li>
+      <li><a href="api/allocator.html#id41">update_soft_bind() (redis_allocator.allocator.RedisAllocator method)</a>, <a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.update_soft_bind">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="V">V</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/allocator.html#redis_allocator.allocator.RedisAllocator.values_lock_status">values_lock_status() (redis_allocator.allocator.RedisAllocator method)</a>
+
+      <ul>
+        <li><a href="api/lock.html#redis_allocator.lock.BaseLockPool.values_lock_status">(redis_allocator.lock.BaseLockPool method)</a>
+</li>
+        <li><a href="api/lock.html#redis_allocator.lock.RedisLockPool.values_lock_status">(redis_allocator.lock.RedisLockPool method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2026, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

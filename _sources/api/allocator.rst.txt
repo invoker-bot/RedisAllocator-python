@@ -1,0 +1,244 @@
+Allocator Module
+===============
+
+.. module:: redis_allocator.allocator
+
+This module provides resource allocation mechanisms using Redis as the backend.
+
+RedisAllocator
+-------------
+
+.. autoclass:: RedisAllocator
+   :members:
+   :inherited-members:
+
+RedisAllocatorObject
+------------------
+
+.. autoclass:: RedisAllocatorObject
+   :members:
+
+RedisAllocatableClass
+-------------------
+
+.. autoclass:: RedisAllocatableClass
+   :members:
+
+RedisThreadHealthCheckPool
+-------------------------
+
+.. autoclass:: RedisThreadHealthCheckPool
+   :members:
+
+Allocator
+=========
+
+.. automodule:: redis_allocator.allocator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Core Concepts & Visualization
+-----------------------------
+
+Allocator Pool Structure (Conceptual)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The allocator manages a pool of resources using several Redis keys:
+
+*   **Pool Hash (`<prefix>|<suffix>|pool`)**: Stores the resource keys currently in the pool. The value for each key represents its position in a doubly-linked list used for the free list (e.g., `prev_key||next_key||expiry_timestamp`). A special value (`#ALLOCATED`) indicates the key is part of the pool but not currently free.
+*   **Head Pointer (`...|pool|head`)**: A simple key holding the resource key currently at the head of the free list.
+*   **Tail Pointer (`...|pool|tail`)**: A simple key holding the resource key currently at the tail of the free list.
+*   **Lock Keys (`<prefix>|<suffix>:<key>`)**: Standard Redis keys used as locks in non-shared mode. Their existence indicates a resource is allocated.
+*   **Soft Bind Cache Keys (`<prefix>|<suffix>-cache:bind:<name>`)**: Store the mapping between a logical name and an allocated resource key for soft binding.
+
+.. mermaid::
+
+   graph TD
+       subgraph Redis Keys
+           HKey["<prefix>|<suffix>|pool|head"] --> Key1["Key1: ""||Key2||Expiry"]
+           TKey["<prefix>|<suffix>|pool|tail"] --> KeyN["KeyN: KeyN-1||""||Expiry"]
+           PoolHash["<prefix>|<suffix>|pool (Hash)"]
+       end
+
+       subgraph "PoolHash Contents (Doubly-Linked Free List)"
+           Key1 --> Key2["Key2: Key1||Key3||Expiry"]
+           Key2 --> Key3["Key3: Key2||...||Expiry"]
+           Key3 --> ...
+           KeyN_1[...] --> KeyN
+       end
+
+       subgraph "Allocated Keys (Non-Shared Mode)"
+           LKey1["<prefix>|<suffix>:AllocatedKey1"]
+           LKeyX["<prefix>|<suffix>:AllocatedKeyX"]
+       end
+
+       subgraph "Soft Bind Cache"
+           CacheKey1["<prefix>|<suffix>-cache:bind:name1"] --> LKey1
+       end
+
+Simplified Allocation Flow (Non-Shared Mode)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When `malloc` or `malloc_key` is called in non-shared mode:
+
+1.  It checks if a name was provided for soft binding.
+2.  If yes, it looks up the name in the soft bind cache.
+3.  If a cached key is found and the corresponding lock key does *not* exist, the cached key is reused.
+4.  Otherwise (no name, no valid cached key), it attempts to pop a key from the head of the free list (using the Pool Hash and Head Pointer).
+5.  If a key is popped, a lock key is created for it with the specified timeout.
+6.  If a name was provided, the soft bind cache is updated.
+7.  The allocated key (or None) is returned.
+
+.. mermaid::
+
+   flowchart TD
+       Start --> CheckSoftBind{Soft Bind Name Provided?}
+       CheckSoftBind -- Yes --> GetBind{GET bind cache key}
+       GetBind --> IsBoundKeyValid{"Cached Key Found and Unlocked?"}
+       IsBoundKeyValid -- Yes --> ReturnCached[Return Cached Key]
+       IsBoundKeyValid -- No --> PopHead{Pop Head from Free List (Lua pop_from_head)}
+       CheckSoftBind -- No --> PopHead
+       PopHead --> IsKeyFound{Key Found?}
+       IsKeyFound -- Yes --> LockKey[SET Lock Key w/ Timeout]
+       LockKey --> UpdateCache{"Update Bind Cache (if name provided)"}
+       UpdateCache --> ReturnNewKey[Return New Key]
+       IsKeyFound -- No --> ReturnNone[Return None]
+       ReturnCached --> End
+       ReturnNewKey --> End
+       ReturnNone --> End
+
+Simplified Free Flow (Non-Shared Mode)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When `free` or `free_keys` is called in non-shared mode:
+
+1.  It attempts to delete the lock key (`<prefix>|<suffix>:<key>`).
+2.  If the lock key existed and was deleted (DEL returns 1), the resource key is added back to the tail of the free list within the Pool Hash.
+
+.. mermaid::
+
+   flowchart TD
+       Start --> DeleteLock{DEL Lock Key}
+       DeleteLock --> Deleted{"Key Existed? (DEL > 0)"}
+       Deleted -- Yes --> PushTail[Push Key to Free List Tail (Lua push_to_tail)]
+       PushTail --> End
+       Deleted -- No --> End
+
+Atomicity Guarantees
+--------------------
+
+Allocator state transitions are implemented as Redis Lua scripts registered through
+``register_script``. Redis runs each script atomically on a single Redis instance, so
+multiple client processes cannot observe or interleave a half-updated free-list node,
+lock key, or soft-binding update. Redis Cluster is intentionally unsupported because
+the allocator mutates several related keys in the same script.
+
+The atomic boundary is one public call for the core pool operations:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 24 54
+
+   * - Operation
+     - Atomic boundary
+     - Notes
+   * - ``malloc_key()``
+     - One Lua EVAL
+     - Checks soft binding, pops or rotates the free-list head, marks the item allocated, creates the lock key, and refreshes binding state together.
+   * - ``free_keys()``
+     - One Lua EVAL
+     - Deletes lock keys and returns still-present pool members to the free-list tail together. Unknown or evicted keys are no-ops.
+   * - ``extend()`` / ``shrink()`` / ``assign()``
+     - One Lua EVAL per call
+     - Batch updates are atomic as a batch. ``assign()`` and ``shrink()`` intentionally preserve lock keys for evicted members; ``extend()`` / ``assign()`` delete a residual lock only when that same key is newly added to the pool.
+   * - ``clear()``
+     - One Lua EVAL
+     - Deletes the pool hash plus head/tail pointers only; it does not scan or delete per-resource lock keys.
+   * - ``gc()``
+     - One Lua EVAL per pass
+     - Incrementally reconciles up to the requested scan count and saves the scan cursor.
+   * - ``malloc()`` / ``RedisAllocatorObject.release()``
+     - Wrapper around atomic calls
+     - ``malloc()`` wraps ``malloc_key()`` after the atomic allocation; ``release()`` wraps ``free_keys()`` after closing the local object.
+
+Multi-process recovery relies on atomic scripts plus lock TTLs and garbage collection.
+A process killed after allocation may leave a lock behind; pool-member locks either
+expire naturally or are reconciled by ``gc()``. Orphan locks whose key is no longer
+in the pool are outside GC scope. Permanent locks created with ``timeout <= 0`` are
+never reclaimed automatically and must be released explicitly with ``free_keys(key)``,
+by reintroducing that same key with ``extend([key])`` or ``assign([... key ...])``,
+or by deleting ``<prefix>|<suffix>:<key>`` directly.
+
+Complexity
+----------
+
+The allocator hot path avoids full-pool scans. ``malloc_key()`` and single-key
+``free_keys()`` are the intended high-frequency operations; ``assign()`` is for
+lower-frequency wholesale replacement.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 28 27 27
+
+   * - Operation
+     - Time complexity
+     - Space / Redis writes
+     - Recommended use
+   * - ``malloc_key()``
+     - Amortized ``O(1)``; worst-case ``O(k)`` when skipping ``k`` expired or locked head entries
+     - Constant extra metadata writes
+     - Hot path allocation.
+   * - ``free_keys(n)``
+     - ``O(n)``
+     - Constant writes per released key
+     - Hot path release; single-key free is ``O(1)``.
+   * - ``extend(n)``
+     - ``O(n)``, independent of existing pool size
+     - Constant writes per supplied key
+     - Incremental pool additions or expiry refresh.
+   * - ``shrink(n)``
+     - ``O(n)``
+     - Constant writes per supplied key
+     - Remove known resources.
+   * - ``assign(n)``
+     - ``O(current_pool_size + n)``
+     - Rewrites membership for removed or new keys
+     - Low-frequency full replacement.
+   * - ``gc(count)``
+     - Approximately ``O(count)`` per pass
+     - Bounded by scanned entries
+     - Periodic incremental repair and reclaim.
+
+``k`` in ``malloc_key()`` is the number of stale head entries cleaned during that
+allocation. Those entries are removed or marked allocated as they are skipped, so
+the cost is paid once and amortizes over later calls.
+
+The ``pytest -m benchmark`` suite enforces these contracts across pool sizes from
+10 to 5000 keys for ``malloc_key()`` plus single-key ``free_keys()``, batched
+``free_keys(n)``, ``extend(n)``, ``shrink(n)``, and ``gc(count)``. It covers
+``assign(n)`` across 10 to 1000 keys because fakeredis/lupa is unreliable with
+5000+ Lua ARGV on Windows. ``tests/_perf_real_redis.py`` runs the same benchmark
+against a real Redis container and covers ``assign(n)`` through 5000 keys.
+
+Shared Mode
+-----------
+
+In shared mode (`shared=True`), the flow is simpler:
+
+*   **Allocation**: Pops a key from the head, but immediately pushes it back to the tail without creating a lock key. Soft binding still applies.
+*   **Free**: Effectively a no-op, as no lock key was created during allocation. 
+
+Allocation Wrapper Lifecycle
+----------------------------
+
+`RedisAllocator.malloc()` returns `None` when no resource is available. When it returns a `RedisAllocatorObject`, prefer using it as a context manager:
+
+.. code-block:: python
+
+   allocation = allocator.malloc(timeout=120)
+   if allocation is not None:
+       with allocation:
+           use_resource(allocation.key)
+
+Leaving the `with` block calls `allocation.release()`, which closes the wrapped object and returns the key to the allocator. `release()` is idempotent and can also be called directly in cleanup paths. `close()` only closes the wrapped object; it does not return the key to the pool.

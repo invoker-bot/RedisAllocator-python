@@ -1,0 +1,541 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diagnostics Module &mdash; RedisAllocator 0.0.1</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Changelog" href="../changelog.html" />
+    <link rel="prev" title="Task Queue Module" href="task_queue.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            RedisAllocator
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/proxy_pool.html">Example: Managing a Proxy Pool with Automatic Updates</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="lock.html">Lock Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="allocator.html">Allocator Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="allocator.html#module-0">Allocator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="task_queue.html">Task Queue Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="task_queue.html#module-0">Task Queue</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Diagnostics Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#python-api">Python API</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cli">CLI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#atomicity-boundary">Atomicity Boundary</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#health-states">Health States</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#orphan-lock-recovery">Orphan-Lock Recovery</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#class-reference">Class Reference</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.diagnostics.RedisAllocatorDiagnostics"><code class="docutils literal notranslate"><span class="pre">RedisAllocatorDiagnostics</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot"><code class="docutils literal notranslate"><span class="pre">AllocatorDiagnosticsSnapshot</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.diagnostics.models.PoolDiagnostics"><code class="docutils literal notranslate"><span class="pre">PoolDiagnostics</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.diagnostics.models.BindingDiagnostics"><code class="docutils literal notranslate"><span class="pre">BindingDiagnostics</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.diagnostics.models.OrphanDiagnostics"><code class="docutils literal notranslate"><span class="pre">OrphanDiagnostics</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#redis_allocator.diagnostics.models.PressureDiagnostics"><code class="docutils literal notranslate"><span class="pre">PressureDiagnostics</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../git_history.html">Git Commit History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">RedisAllocator</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Diagnostics Module</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/diagnostics.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-redis_allocator.diagnostics">
+<span id="diagnostics-module"></span><h1>Diagnostics Module<a class="headerlink" href="#module-redis_allocator.diagnostics" title="Link to this heading"></a></h1>
+<p>The diagnostics subsystem provides observer-only snapshots and a local dashboard
+for live <code class="docutils literal notranslate"><span class="pre">RedisAllocator</span></code> instances.</p>
+<section id="python-api">
+<h2>Python API<a class="headerlink" href="#python-api" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">redis</span><span class="w"> </span><span class="kn">import</span> <span class="n">Redis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">redis_allocator</span><span class="w"> </span><span class="kn">import</span> <span class="n">RedisAllocatorDiagnostics</span>
+
+<span class="n">redis</span> <span class="o">=</span> <span class="n">Redis</span><span class="o">.</span><span class="n">from_url</span><span class="p">(</span><span class="s2">&quot;redis://localhost:6379/0&quot;</span><span class="p">,</span> <span class="n">decode_responses</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">diagnostics</span> <span class="o">=</span> <span class="n">RedisAllocatorDiagnostics</span><span class="p">(</span><span class="n">redis</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;myapp&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;allocator&quot;</span><span class="p">)</span>
+<span class="n">snapshot</span> <span class="o">=</span> <span class="n">diagnostics</span><span class="o">.</span><span class="n">snapshot</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">snapshot</span><span class="o">.</span><span class="n">to_json</span><span class="p">(</span><span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+</pre></div>
+</div>
+</section>
+<section id="cli">
+<h2>CLI<a class="headerlink" href="#cli" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>redis-allocator-diagnose<span class="w"> </span>--redis-url<span class="w"> </span>redis://localhost:6379/0<span class="w"> </span>--prefix<span class="w"> </span>myapp<span class="w"> </span>--suffix<span class="w"> </span>allocator<span class="w"> </span>--json
+redis-allocator-diagnose<span class="w"> </span>--redis-url<span class="w"> </span>redis://localhost:6379/0<span class="w"> </span>--prefix<span class="w"> </span>myapp<span class="w"> </span>--suffix<span class="w"> </span>allocator<span class="w"> </span>--interval<span class="w"> </span><span class="m">1</span><span class="w"> </span>--port<span class="w"> </span><span class="m">8765</span>
+</pre></div>
+</div>
+</section>
+<section id="atomicity-boundary">
+<h2>Atomicity Boundary<a class="headerlink" href="#atomicity-boundary" title="Link to this heading"></a></h2>
+<p>The collector reads allocator pool structure and per-pool-key lock state in one
+Lua EVAL. That atomic snapshot includes:</p>
+<ul class="simple">
+<li><p>the free-list head pointer</p></li>
+<li><p>the free-list tail pointer</p></li>
+<li><p>all pool hash entries</p></li>
+<li><p>lock existence and TTL for each pool member</p></li>
+</ul>
+<p>Advisory Redis metrics, soft bindings, and orphan-lock samples are collected
+separately and bounded by the configured <code class="docutils literal notranslate"><span class="pre">scan_limit</span></code> and <code class="docutils literal notranslate"><span class="pre">sample_limit</span></code>.
+Those advisory sections expose <code class="docutils literal notranslate"><span class="pre">scanned</span></code> and <code class="docutils literal notranslate"><span class="pre">truncated</span></code> fields so callers
+can tell when a dashboard refresh did not inspect every matching key.</p>
+</section>
+<section id="health-states">
+<h2>Health States<a class="headerlink" href="#health-states" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">healthy</span></code></dt><dd><p>No structural violations and no recommendations.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">degraded</span></code></dt><dd><p>The allocator structure is intact, but advisory signals such as orphan locks,
+permanent locks, low free capacity, stale bindings, or truncated scans need
+attention.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">corrupt</span></code></dt><dd><p>The atomic pool snapshot violates linked-list or lock invariants. Stop writers
+and capture diagnostics JSON before attempting manual repair.</p>
+</dd>
+</dl>
+</section>
+<section id="orphan-lock-recovery">
+<h2>Orphan-Lock Recovery<a class="headerlink" href="#orphan-lock-recovery" title="Link to this heading"></a></h2>
+<p>Orphan-lock samples are observer-only diagnostics. The diagnostics API and live
+dashboard never mutate allocator state.</p>
+<p>Known orphan locks can be cleaned precisely by one of these paths:</p>
+<ul class="simple">
+<li><p>call <code class="docutils literal notranslate"><span class="pre">free_keys(key)</span></code> on the allocator;</p></li>
+<li><p>reintroduce that same key with <code class="docutils literal notranslate"><span class="pre">extend([key])</span></code> or <code class="docutils literal notranslate"><span class="pre">assign([...</span> <span class="pre">key</span> <span class="pre">...])</span></code>;</p></li>
+<li><p>delete <code class="docutils literal notranslate"><span class="pre">&lt;prefix&gt;|&lt;suffix&gt;:&lt;key&gt;</span></code> directly in Redis.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">clear()</span></code> deletes only the pool hash and head/tail pointers. <code class="docutils literal notranslate"><span class="pre">gc()</span></code> scans pool
+metadata. Neither operation scans the lock namespace, so neither one repairs
+orphan locks whose key is already outside the pool. Permanent orphan locks
+(<code class="docutils literal notranslate"><span class="pre">TTL</span> <span class="pre">==</span> <span class="pre">-1</span></code>) remain until one of the explicit cleanup paths above is used.</p>
+</section>
+<section id="class-reference">
+<h2>Class Reference<a class="headerlink" href="#class-reference" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.RedisAllocatorDiagnostics">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.diagnostics.</span></span><span class="sig-name descname"><span class="pre">RedisAllocatorDiagnostics</span></span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/collector.html#RedisAllocatorDiagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.RedisAllocatorDiagnostics" title="Link to this definition"></a></dt>
+<dd><p>Collect diagnostics for one RedisAllocator prefix/suffix pair.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.RedisAllocatorDiagnostics.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">redis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'allocator'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shared</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_limit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scan_limit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/collector.html#RedisAllocatorDiagnostics.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.RedisAllocatorDiagnostics.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>prefix</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>suffix</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>shared</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>sample_limit</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>scan_limit</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.RedisAllocatorDiagnostics.snapshot">
+<span class="sig-name descname"><span class="pre">snapshot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/collector.html#RedisAllocatorDiagnostics.snapshot"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.RedisAllocatorDiagnostics.snapshot" title="Link to this definition"></a></dt>
+<dd><p>Return one diagnostics snapshot.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>previous</strong> (<a class="reference internal" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot" title="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot"><em>AllocatorDiagnosticsSnapshot</em></a><em> | </em><em>None</em>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot" title="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot"><em>AllocatorDiagnosticsSnapshot</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.RedisAllocatorDiagnostics.snapshot_json">
+<span class="sig-name descname"><span class="pre">snapshot_json</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/collector.html#RedisAllocatorDiagnostics.snapshot_json"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.RedisAllocatorDiagnostics.snapshot_json" title="Link to this definition"></a></dt>
+<dd><p>Return one diagnostics snapshot as JSON.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>previous</strong> (<a class="reference internal" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot" title="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot"><em>AllocatorDiagnosticsSnapshot</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>indent</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.diagnostics.models.</span></span><span class="sig-name descname"><span class="pre">AllocatorDiagnosticsSnapshot</span></span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/models.html#AllocatorDiagnosticsSnapshot"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot" title="Link to this definition"></a></dt>
+<dd><p>Complete allocator diagnostics snapshot.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.timestamp">
+<span class="sig-name descname"><span class="pre">timestamp</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.timestamp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.identity">
+<span class="sig-name descname"><span class="pre">identity</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">IdentityDiagnostics</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.identity" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.health">
+<span class="sig-name descname"><span class="pre">health</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.health" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.integrity">
+<span class="sig-name descname"><span class="pre">integrity</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">IntegrityDiagnostics</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.integrity" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.pool">
+<span class="sig-name descname"><span class="pre">pool</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#redis_allocator.diagnostics.models.PoolDiagnostics" title="redis_allocator.diagnostics.models.PoolDiagnostics"><span class="pre">PoolDiagnostics</span></a></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.pool" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.bindings">
+<span class="sig-name descname"><span class="pre">bindings</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#redis_allocator.diagnostics.models.BindingDiagnostics" title="redis_allocator.diagnostics.models.BindingDiagnostics"><span class="pre">BindingDiagnostics</span></a></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.bindings" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.orphans">
+<span class="sig-name descname"><span class="pre">orphans</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#redis_allocator.diagnostics.models.OrphanDiagnostics" title="redis_allocator.diagnostics.models.OrphanDiagnostics"><span class="pre">OrphanDiagnostics</span></a></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.orphans" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.redis">
+<span class="sig-name descname"><span class="pre">redis</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">RedisDiagnostics</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.redis" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.pressure">
+<span class="sig-name descname"><span class="pre">pressure</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#redis_allocator.diagnostics.models.PressureDiagnostics" title="redis_allocator.diagnostics.models.PressureDiagnostics"><span class="pre">PressureDiagnostics</span></a></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.pressure" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.recommendations">
+<span class="sig-name descname"><span class="pre">recommendations</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Recommendation</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.recommendations" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timestamp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">identity</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">health</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">integrity=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pool=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bindings=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">orphans=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">redis=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pressure=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">recommendations=&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#redis_allocator.diagnostics.models.AllocatorDiagnosticsSnapshot.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>timestamp</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>identity</strong> (<em>IdentityDiagnostics</em>)</p></li>
+<li><p><strong>health</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>integrity</strong> (<em>IntegrityDiagnostics</em>)</p></li>
+<li><p><strong>pool</strong> (<a class="reference internal" href="#redis_allocator.diagnostics.models.PoolDiagnostics" title="redis_allocator.diagnostics.models.PoolDiagnostics"><em>PoolDiagnostics</em></a>)</p></li>
+<li><p><strong>bindings</strong> (<a class="reference internal" href="#redis_allocator.diagnostics.models.BindingDiagnostics" title="redis_allocator.diagnostics.models.BindingDiagnostics"><em>BindingDiagnostics</em></a>)</p></li>
+<li><p><strong>orphans</strong> (<a class="reference internal" href="#redis_allocator.diagnostics.models.OrphanDiagnostics" title="redis_allocator.diagnostics.models.OrphanDiagnostics"><em>OrphanDiagnostics</em></a>)</p></li>
+<li><p><strong>redis</strong> (<em>RedisDiagnostics</em>)</p></li>
+<li><p><strong>pressure</strong> (<a class="reference internal" href="#redis_allocator.diagnostics.models.PressureDiagnostics" title="redis_allocator.diagnostics.models.PressureDiagnostics"><em>PressureDiagnostics</em></a>)</p></li>
+<li><p><strong>recommendations</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><em>Recommendation</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.diagnostics.models.</span></span><span class="sig-name descname"><span class="pre">PoolDiagnostics</span></span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/models.html#PoolDiagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics" title="Link to this definition"></a></dt>
+<dd><p>Pool capacity and lock counters.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.total">
+<span class="sig-name descname"><span class="pre">total</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.total" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.free">
+<span class="sig-name descname"><span class="pre">free</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.free" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.allocated_markers">
+<span class="sig-name descname"><span class="pre">allocated_markers</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.allocated_markers" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.locked">
+<span class="sig-name descname"><span class="pre">locked</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.locked" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.expired_entries">
+<span class="sig-name descname"><span class="pre">expired_entries</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.expired_entries" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.permanent_locks">
+<span class="sig-name descname"><span class="pre">permanent_locks</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.permanent_locks" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.reclaimable">
+<span class="sig-name descname"><span class="pre">reclaimable</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.reclaimable" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PoolDiagnostics.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">total</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">free</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allocated_markers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expired_entries</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">permanent_locks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reclaimable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#redis_allocator.diagnostics.models.PoolDiagnostics.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>total</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>free</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>allocated_markers</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>locked</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>expired_entries</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>permanent_locks</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>reclaimable</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.diagnostics.models.</span></span><span class="sig-name descname"><span class="pre">BindingDiagnostics</span></span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/models.html#BindingDiagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics" title="Link to this definition"></a></dt>
+<dd><p>Soft-binding counters and bounded samples.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics.total">
+<span class="sig-name descname"><span class="pre">total</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics.total" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics.stale">
+<span class="sig-name descname"><span class="pre">stale</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics.stale" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics.scanned">
+<span class="sig-name descname"><span class="pre">scanned</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics.scanned" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics.truncated">
+<span class="sig-name descname"><span class="pre">truncated</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics.truncated" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics.samples">
+<span class="sig-name descname"><span class="pre">samples</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics.samples" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.BindingDiagnostics.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">total=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stale=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scanned=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">truncated=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples=&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#redis_allocator.diagnostics.models.BindingDiagnostics.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>total</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>stale</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>scanned</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>truncated</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><em>Any</em></a><em>]</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.OrphanDiagnostics">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.diagnostics.models.</span></span><span class="sig-name descname"><span class="pre">OrphanDiagnostics</span></span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/models.html#OrphanDiagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.models.OrphanDiagnostics" title="Link to this definition"></a></dt>
+<dd><p>Lock keys that no longer belong to the allocator pool.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.OrphanDiagnostics.count">
+<span class="sig-name descname"><span class="pre">count</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.OrphanDiagnostics.count" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.OrphanDiagnostics.scanned">
+<span class="sig-name descname"><span class="pre">scanned</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.OrphanDiagnostics.scanned" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.OrphanDiagnostics.truncated">
+<span class="sig-name descname"><span class="pre">truncated</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.OrphanDiagnostics.truncated" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.OrphanDiagnostics.samples">
+<span class="sig-name descname"><span class="pre">samples</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.OrphanDiagnostics.samples" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.OrphanDiagnostics.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">count=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scanned=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">truncated=False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples=&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#redis_allocator.diagnostics.models.OrphanDiagnostics.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>count</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>scanned</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>truncated</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PressureDiagnostics">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">redis_allocator.diagnostics.models.</span></span><span class="sig-name descname"><span class="pre">PressureDiagnostics</span></span><a class="reference internal" href="../_modules/redis_allocator/diagnostics/models.html#PressureDiagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#redis_allocator.diagnostics.models.PressureDiagnostics" title="Link to this definition"></a></dt>
+<dd><p>Pressure deltas between two diagnostics snapshots.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PressureDiagnostics.interval_seconds">
+<span class="sig-name descname"><span class="pre">interval_seconds</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PressureDiagnostics.interval_seconds" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PressureDiagnostics.redis_ops_per_sec">
+<span class="sig-name descname"><span class="pre">redis_ops_per_sec</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PressureDiagnostics.redis_ops_per_sec" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PressureDiagnostics.allocator_keyspace_delta">
+<span class="sig-name descname"><span class="pre">allocator_keyspace_delta</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PressureDiagnostics.allocator_keyspace_delta" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PressureDiagnostics.command_deltas">
+<span class="sig-name descname"><span class="pre">command_deltas</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#redis_allocator.diagnostics.models.PressureDiagnostics.command_deltas" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="redis_allocator.diagnostics.models.PressureDiagnostics.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">interval_seconds=0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">redis_ops_per_sec=0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allocator_keyspace_delta=0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">command_deltas=&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#redis_allocator.diagnostics.models.PressureDiagnostics.__init__" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>interval_seconds</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>redis_ops_per_sec</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>)</p></li>
+<li><p><strong>allocator_keyspace_delta</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>command_deltas</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="task_queue.html" class="btn btn-neutral float-left" title="Task Queue Module" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../changelog.html" class="btn btn-neutral float-right" title="Changelog" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024-2026, Invoker Bot.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
