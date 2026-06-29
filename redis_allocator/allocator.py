@@ -153,6 +153,7 @@ class RedisAllocatorObject(Generic[U]):
         self.key = key
         self.obj = obj
         self.params = params
+        self._released = False
         if self.obj is not None:
             self.obj.set_config(key, params)
 
@@ -177,6 +178,32 @@ class RedisAllocatorObject(Generic[U]):
         """Kill the object."""
         if self.obj is not None:
             self.obj.close()
+
+    def release(self, timeout: int = -1):
+        """Close the wrapped object and return the allocation to the pool.
+
+        This method is idempotent so callers can safely place it in cleanup
+        paths that may run more than once.
+
+        Args:
+            timeout: Optional timeout in seconds for the returned pool item.
+        """
+        if self._released:
+            return
+        try:
+            self.close()
+        finally:
+            self.allocator.free(self, timeout=timeout)
+            self._released = True
+
+    def __enter__(self):
+        """Open and return this allocated object for ``with`` statements."""
+        return self.open()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Release this allocation when leaving a ``with`` statement."""
+        self.release()
+        return False
 
     def is_healthy(self) -> bool:
         """Check if the object is healthy."""
@@ -456,6 +483,8 @@ class DefaultRedisAllocatorPolicy(RedisAllocatorPolicy[U]):
             obj.name) else (obj.name if obj and hasattr(obj, 'name') else None)
         key = allocator.malloc_key(timeout, obj_name,
                                    cache_timeout=cache_timeout)
+        if key is None:
+            return None
         alloc_obj = RedisAllocatorObject(allocator, key, obj, params)
         if self.auto_close:
             old_obj = self.objects.get(alloc_obj.unique_id, None)
@@ -1271,6 +1300,8 @@ class RedisAllocator(RedisLockPool, Generic[U]):
         # Explicitly call obj.name if obj exists
         name = obj.name if obj and hasattr(obj, 'name') else None
         key = self.malloc_key(timeout, name, cache_timeout=cache_timeout)
+        if key is None:
+            return None
         return RedisAllocatorObject(
             self, key, obj, params
         )

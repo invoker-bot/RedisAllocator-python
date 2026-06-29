@@ -135,15 +135,13 @@ RedisAllocator manages a pool of resources that can be allocated, freed, and gar
     # Allocate a resource with object (returns a RedisAllocatorObject)
     allocated_obj = allocator.malloc(timeout=120)
     if allocated_obj:
-        try:
+        with allocated_obj:
             # The key is available as a property
             print(f"Allocated resource: {allocated_obj.key}")
             
             # Update the resource's lock timeout
             allocated_obj.update(timeout=60)
-        finally:
-            # Free the resource when done
-            allocator.free(allocated_obj)
+        # Leaving the with block calls allocated_obj.release().
 
     # Using soft binding (associates a name with a resource)
     allocator.update_soft_bind("worker-1", "resource-1")
@@ -182,7 +180,7 @@ RedisTaskQueue enables distributed task processing across multiple workers:
         id="task-123",
         name="example-task",
         params={"input": "data"},
-        timeout=300,  # Optional timeout in seconds
+        timeout=300,  # End-to-end wait timeout in seconds for remote execution
         policy=TaskExecutePolicy.Auto,  # Execution policy
         once=False  # Whether to delete the result after getting it
     )

@@ -219,6 +219,25 @@ class TestRedisTaskQueue:
         # Verify time.sleep was called at least once
         time_sleep_mock.assert_called()
 
+    def test_remote_execution_sleep_is_bounded_by_timeout(self, task_queue, mocker):
+        """Remote polling should not sleep longer than the caller's timeout."""
+        task_queue.interval = 5
+        task = task_queue.build_task("short_timeout_task", "test", {})
+        current_time = [0.0]
+
+        def fake_sleep(seconds):
+            current_time[0] += seconds
+
+        mocker.patch("redis_allocator.task_queue.time.monotonic", side_effect=lambda: current_time[0])
+        sleep_mock = mocker.patch("redis_allocator.task_queue.time.sleep", side_effect=fake_sleep)
+        mocker.patch.object(task_queue, "get_task", return_value=None)
+
+        with pytest.raises(TimeoutError):
+            task_queue.execute_task_remotely(task, timeout=0.1)
+
+        assert sleep_mock.call_args_list
+        assert all(call.args[0] <= 0.1 for call in sleep_mock.call_args_list)
+
     def test_query_with_local_policy(self, task_queue):
         """Test query with local execution policy."""
         # Call query with local policy
@@ -281,6 +300,26 @@ class TestRedisTaskQueue:
         finally:
             # Make sure thread is done
             worker_thread.join(timeout=1)
+
+    def test_query_with_remote_policy_passes_timeout_and_once(self, task_queue, mocker):
+        """Remote policy should honor query timeout and once options."""
+        remote = mocker.patch.object(task_queue, "execute_task_remotely", return_value="remote-result")
+
+        result = task_queue.query(
+            "task4b",
+            "test",
+            {},
+            policy=TaskExecutePolicy.Remote,
+            timeout=0.25,
+            once=True,
+        )
+
+        assert result == "remote-result"
+        remote.assert_called_once()
+        task_arg, timeout_arg, once_arg = remote.call_args.args
+        assert task_arg.id == "task4b"
+        assert timeout_arg == 0.25
+        assert once_arg is True
 
     def test_query_with_local_first_policy(self, task_queue):
         """Test query with local-first execution policy."""
@@ -723,17 +762,20 @@ class TestRedisTaskQueue:
         # Mock get_task to always return None (simulating no worker processing the task)
         mocker.patch.object(task_queue, 'get_task', return_value=None)
 
-        # Mock time.sleep to count calls and track timeout reduction
+        # Mock time.sleep and monotonic time so the deadline-driven loop can
+        # advance without slowing the test down.
         sleep_call_count = 0
         interval_sum = 0
+        current_time = [0.0]
 
         def mock_sleep(seconds):
             nonlocal sleep_call_count, interval_sum
             sleep_call_count += 1
             interval_sum += seconds
-            # Don't actually sleep
+            current_time[0] += seconds
 
-        mocker.patch('time.sleep', side_effect=mock_sleep)
+        mocker.patch('redis_allocator.task_queue.time.monotonic', side_effect=lambda: current_time[0])
+        mocker.patch('redis_allocator.task_queue.time.sleep', side_effect=mock_sleep)
 
         # Set a small timeout to make the test fast
         timeout = 2.0  # Should allow for exactly 4 iterations with interval=0.5
@@ -745,14 +787,12 @@ class TestRedisTaskQueue:
         # Verify error message
         assert f"Task {task.id} in {task.name} has expired" in str(exc_info.value)
 
-        # Verify sleep was called
-        # In the implementation, the loop continues while timeout >= 0, so we get 5 iterations
-        # with timeout=2.0 and interval=0.5: [2.0, 1.5, 1.0, 0.5, 0.0]
-        expected_calls = int(timeout / task_queue.interval) + 1  # +1 for the last iteration when timeout=0
+        # Verify sleep was bounded by the caller timeout and polling interval.
+        expected_calls = int(timeout / task_queue.interval)
         assert sleep_call_count == expected_calls
 
-        # Verify that the total time slept approximately equals the timeout
-        assert abs(interval_sum - timeout) <= task_queue.interval
+        # Verify that the total time slept equals the timeout.
+        assert interval_sum == timeout
 
     def test_execute_task_remotely_direct_timeout(self, task_queue, redis_client, mocker):
         """Test execute_task_remotely method's timeout logic directly."""
@@ -762,8 +802,14 @@ class TestRedisTaskQueue:
         # Mock redis and get_task to simulate the behavior
         mocker.patch.object(task_queue, 'get_task', return_value=None)
 
-        # Mock time.sleep to avoid actual waiting
-        mocker.patch('time.sleep')
+        current_time = [0.0]
+
+        def mock_sleep(seconds):
+            current_time[0] += seconds
+
+        # Mock time.sleep and monotonic time to avoid actual waiting.
+        mocker.patch('redis_allocator.task_queue.time.monotonic', side_effect=lambda: current_time[0])
+        mocker.patch('redis_allocator.task_queue.time.sleep', side_effect=mock_sleep)
 
         # Force timeout to be exactly 0 after one iteration
         # This will trigger the exact lines we want to test

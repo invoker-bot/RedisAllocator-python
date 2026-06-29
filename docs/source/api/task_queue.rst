@@ -20,7 +20,7 @@ RedisTask
 TaskExecutePolicy
 ---------------
 
-.. autocitten:: TaskExecutePolicy
+.. autoclass:: TaskExecutePolicy
    :members: 
 
 Task Queue
@@ -45,6 +45,13 @@ Redis itself, and a `Listener` processing the task.
     executes the user-defined `task_fn`, and updates the task data in Redis with the result or error.
 4.  **Result Retrieval**: The original client can periodically call `get_task()` to fetch the updated
     task data and retrieve the result or error.
+
+Timeout and Result Cleanup
+--------------------------
+
+The `timeout` passed to `query()` is honored for remote execution policies (`Remote`, `RemoteFirst`, `LocalFirst` fallback, and `Auto` when a listener exists). Remote polling sleeps for at most the remaining timeout, so a short caller timeout is not stretched by a longer queue polling interval.
+
+When `once=True`, the result key is deleted only after a task has produced a result or error. Pending task state is left in Redis so a worker can still read and complete it.
 
 .. mermaid::
 

@@ -284,6 +284,44 @@ class TestEdgeCases:
         result = alloc.malloc_key(timeout=10)
         assert result is None
 
+    def test_edge_empty_pool_malloc_object_returns_none(self, redis_client: Redis):
+        """The object-wrapper API must also return None when no key is available."""
+        alloc = RedisAllocator(redis_client, "empty-object", "t")
+        assert alloc.malloc(timeout=10) is None
+
+    def test_doc_allocator_object_context_manager_releases_key(self, redis_allocator: RedisAllocator):
+        """Allocator objects can be used as context managers to release resources."""
+        obj = redis_allocator.malloc(timeout=30)
+        assert obj is not None
+        key = obj.key
+
+        with obj as allocated:
+            assert allocated is obj
+            if not redis_allocator.shared:
+                assert redis_allocator.is_locked(key)
+
+        if not redis_allocator.shared:
+            assert not redis_allocator.is_locked(key)
+            assert key in snapshot(redis_allocator).free_keys
+        assert_invariants(redis_allocator, context="after context manager release")
+
+    def test_doc_allocator_object_release_is_idempotent(self, redis_allocator: RedisAllocator):
+        """Explicit release closes the wrapped object and can be called repeatedly."""
+        from tests.conftest import _TestObject
+
+        resource = _TestObject()
+        obj = redis_allocator.malloc(timeout=30, obj=resource)
+        assert obj is not None
+        key = obj.key
+
+        obj.release()
+        obj.release()
+
+        assert resource.closed
+        if not redis_allocator.shared:
+            assert not redis_allocator.is_locked(key)
+        assert_invariants(redis_allocator, context="after idempotent release")
+
     def test_edge_extend_then_drain_then_malloc_returns_none(
         self, redis_allocator: RedisAllocator
     ):

@@ -15,7 +15,7 @@ RedisAllocator
 RedisAllocatorObject
 ------------------
 
-.. autocitten:: RedisAllocatorObject
+.. autoclass:: RedisAllocatorObject
    :members:
 
 RedisAllocatableClass
@@ -132,3 +132,17 @@ In shared mode (`shared=True`), the flow is simpler:
 
 *   **Allocation**: Pops a key from the head, but immediately pushes it back to the tail without creating a lock key. Soft binding still applies.
 *   **Free**: Effectively a no-op, as no lock key was created during allocation. 
+
+Allocation Wrapper Lifecycle
+----------------------------
+
+`RedisAllocator.malloc()` returns `None` when no resource is available. When it returns a `RedisAllocatorObject`, prefer using it as a context manager:
+
+.. code-block:: python
+
+   allocation = allocator.malloc(timeout=120)
+   if allocation is not None:
+       with allocation:
+           use_resource(allocation.key)
+
+Leaving the `with` block calls `allocation.release()`, which closes the wrapped object and returns the key to the allocator. `release()` is idempotent and can also be called directly in cleanup paths. `close()` only closes the wrapped object; it does not return the key to the pool.

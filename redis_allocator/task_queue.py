@@ -171,19 +171,27 @@ class RedisTaskQueue:
             TimeoutError: If the task times out
             Exception: Any exception raised during task execution
         """
-        self.set_task(task)
-        self.redis.rpush(self._queue_key(task.name), task.id)
         if timeout is None:
             timeout = self.timeout
-        while timeout >= 0:
-            time.sleep(self.interval)
-            result = self.get_task(task.id, once)
+        task.expiry = time.time() + timeout
+        self.set_task(task)
+        self.redis.rpush(self._queue_key(task.name), task.id)
+        deadline = time.monotonic() + timeout
+        while True:
+            result = self.get_task(task.id, once=False)
             if result is not None:
                 if result.error is not None:
+                    if once:
+                        self.redis.delete(self._result_key(task.id))
                     raise result.error
                 elif result.result is not None:
+                    if once:
+                        self.redis.delete(self._result_key(task.id))
                     return result.result
-            timeout -= self.interval
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(self.interval, remaining))
         raise TimeoutError(f'Task {task.id} in {task.name} has expired')
 
     def execute_task_locally(self, task: RedisTask, timeout: Optional[float] = None) -> Any:
@@ -386,21 +394,21 @@ class RedisTaskQueue:
             case TaskExecutePolicy.Local:
                 return self.execute_task_locally(t, timeout)
             case TaskExecutePolicy.Remote:
-                return self.execute_task_remotely(t)
+                return self.execute_task_remotely(t, timeout, once)
             case TaskExecutePolicy.LocalFirst:
                 try:
                     return self.execute_task_locally(t, timeout)
                 except Exception as e:
                     logger.exception(f'Failed to execute task {t.id} in {t.name} locally: {e}')
-                    return self.execute_task_remotely(t, timeout)
+                    return self.execute_task_remotely(t, timeout, once)
             case TaskExecutePolicy.RemoteFirst:
                 try:
-                    return self.execute_task_remotely(t, timeout)
+                    return self.execute_task_remotely(t, timeout, once)
                 except Exception as e:
                     logger.exception(f'Failed to execute task {t.id} in {t.name} remotely: {e}')
                     return self.execute_task_locally(t, timeout)
             case TaskExecutePolicy.Auto:
                 if self.redis.exists(self._queue_listen_name(name)):
-                    return self.execute_task_remotely(t, timeout)
+                    return self.execute_task_remotely(t, timeout, once)
                 else:
                     return self.execute_task_locally(t, timeout)

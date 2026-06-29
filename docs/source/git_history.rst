@@ -9,17 +9,12 @@ Quick Summary
 .. git_changelog::
    :revisions: 5
    :detailed-message-pre: True
-   :filename-filter: .*\.(py|rst|md)$
-   :hide-refs: True
+   :filename_filter: .*\.(py|rst|md)$
 
 Full History
 -----------
 
-.. git_commit_detail::
-   :branch: main
-   :commit_limit: 100
-   :hide-refs: True
-   :show-commit-id: True
-   :show-author: True
-   :show-date: True
-   :filename-filter: .*\.(py|rst|md)$ 
+.. git_changelog::
+   :revisions: 100
+   :detailed-message-pre: True
+   :filename_filter: .*\.(py|rst|md)$

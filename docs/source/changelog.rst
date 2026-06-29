@@ -21,4 +21,4 @@ Commit History
 .. git_changelog::
    :revisions: 10
    :detailed-message-pre: True
-   :filename-filter: .*\.(py|rst|md)$ 
+   :filename_filter: .*\.(py|rst|md)$

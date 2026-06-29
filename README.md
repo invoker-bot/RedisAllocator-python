@@ -42,6 +42,8 @@ A few intentional behaviors that may surprise newcomers — knowing them up-fron
 
 - **`malloc_key(timeout<=0)` creates a permanent (non-expiring) lock.** Useful for resources whose ownership must outlive process restarts; the caller takes responsibility for releasing via `free_keys`. GC never reclaims it (because expiry is also `-1`). Misuse causes resource leaks — only pass `timeout=0` when you mean "I will manage this lock myself."
 - **`cache_timeout=0` (or negative) creates a permanent soft binding.** Sticks until explicitly overwritten by another `update_soft_bind` for the same name, or removed via `unbind_soft_bind`. Symmetric to the lock-timeout contract above.
+- **`malloc()` and `malloc_key()` return `None` when no resource is available.** Check the return value before using it; an empty pool is not represented as a wrapper with `key=None`.
+- **Prefer `with allocator.malloc(...) as allocation:` or `allocation.release()` for object allocations.** `release()` closes the wrapped object and returns the key to the pool. Plain `close()` only closes the wrapped object and leaves allocation ownership unchanged for callers that manage `free()` manually.
 - **`assign()` does not delete the lock keys of items it evicts.** A deliberate write-amplification trade-off: locks expire on their own TTL, and if the same key is later re-`extend`-ed into the pool, the new `extend`/`assign` clears any residual lock so the new entry starts clean. If you evict a key and never re-add it, the lock is an orphan — callers who care must `DEL <prefix>|<suffix>:<key>` themselves.
 - **Pool keys are validated at the API boundary.** `extend()` / `assign()` raise `ValueError` for keys that are empty, equal to the literal `"#ALLOCATED"`, contain the `"||"` separator, contain NUL bytes, or are not strings. These shapes break the on-disk encoding and would silently corrupt the linked list.
 
@@ -172,15 +174,13 @@ if key:
 # Allocate a resource with object (returns a RedisAllocatorObject)
 allocated_obj = allocator.malloc(timeout=120)
 if allocated_obj:
-    try:
+    with allocated_obj:
         # The key is available as a property
         print(f"Allocated resource: {allocated_obj.key}")
         
         # Update the resource's lock timeout
         allocated_obj.update(timeout=60)
-    finally:
-        # Free the resource when done
-        allocator.free(allocated_obj)
+    # Leaving the with block calls allocated_obj.release().
 
 # Using soft binding (associates a name with a resource)
 allocator.update_soft_bind("worker-1", "resource-1")
@@ -406,7 +406,7 @@ result = task_queue.query(
     id="task-123",
     name="example-task",
     params={"input": "data"},
-    timeout=300,  # Optional timeout in seconds
+    timeout=300,  # End-to-end wait timeout in seconds for remote execution
     policy=TaskExecutePolicy.Auto,  # Execution policy
     once=False  # Whether to delete the result after getting it
 )

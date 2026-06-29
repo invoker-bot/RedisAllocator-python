@@ -22,7 +22,7 @@ tests_require = [
 ]
 
 docs_require = [
-    'sphinx >= 7.0.0',
+    'sphinx >= 7.0.0, < 9.0.0',
     'sphinx-rtd-theme >= 1.3.0',
     'sphinx-git >= 11.0.0',
     'sphinxcontrib-mermaid >= 0.7.1',
