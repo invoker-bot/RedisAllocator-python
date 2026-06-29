@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RedisAllocator Diagnostics</title>
+</head>
+<body>
+  <main>
+    <h1>RedisAllocator Diagnostics</h1>
+    <p>Live snapshot source: <code>/api/snapshot</code></p>
+    <pre id="snapshot">Loading...</pre>
+  </main>
+  <script>
+    async function refresh() {
+      const response = await fetch('/api/snapshot');
+      const payload = await response.json();
+      document.getElementById('snapshot').textContent = JSON.stringify(payload, null, 2);
+    }
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

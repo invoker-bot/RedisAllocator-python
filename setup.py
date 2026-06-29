@@ -39,6 +39,9 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/invoker-bot/RedisAllocator-python',
     packages=find_packages(),
+    package_data={
+        'redis_allocator.diagnostics': ['static/*.html'],
+    },
     classifiers=[
         # 'Development Status :: 1 - Planning',
         # 'Development Status :: 2 - Pre-Alpha',
