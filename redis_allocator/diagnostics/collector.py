@@ -244,17 +244,25 @@ class RedisAllocatorDiagnostics:
                 Recommendation("critical", "Stop writers and capture diagnostics JSON before any repair attempt.", "integrity-corrupt")
             )
         if orphans.count > 0:
-            recommendations.append(Recommendation("warning", "Orphan locks exist; audit assign/shrink churn and evicted resources.", "orphan-locks"))
+            recommendations.append(
+                Recommendation("warning", "Orphan locks exist; audit assign/shrink churn and evicted resources.", "orphan-locks")
+            )
         if orphans.truncated or bindings.truncated:
-            recommendations.append(Recommendation("info", "Advisory scan was truncated; raise scan_limit for a wider sample.", "scan-truncated"))
+            recommendations.append(
+                Recommendation("info", "Advisory scan was truncated; raise scan_limit for a wider sample.", "scan-truncated")
+            )
         if pool.permanent_locks > 0:
             recommendations.append(Recommendation("info", "Permanent locks exist; audit timeout <= 0 usage.", "permanent-locks"))
         if pool.total > 0 and pool.free / pool.total < 0.1:
-            recommendations.append(Recommendation("warning", "Free pool is below 10%; increase capacity or reduce allocation timeout.", "low-free-capacity"))
+            recommendations.append(
+                Recommendation("warning", "Free pool is below 10%; increase capacity or reduce allocation timeout.", "low-free-capacity")
+            )
         if bindings.stale > 0:
             recommendations.append(Recommendation("info", "Stale soft bindings exist; consider unbinding inactive names.", "stale-bindings"))
         if pressure.command_deltas.get("eval", 0) > 100:
-            recommendations.append(Recommendation("info", "High EVAL volume observed; inspect allocation rate and dashboard interval.", "high-eval-pressure"))
+            recommendations.append(
+                Recommendation("info", "High EVAL volume observed; inspect allocation rate and dashboard interval.", "high-eval-pressure")
+            )
         return recommendations
 
     def snapshot(self, previous: AllocatorDiagnosticsSnapshot | None = None) -> AllocatorDiagnosticsSnapshot:
