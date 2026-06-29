@@ -64,5 +64,10 @@ setup(
         'docs': docs_require,
         'dev': tests_require + docs_require,
     },
+    entry_points={
+        'console_scripts': [
+            'redis-allocator-diagnose=redis_allocator.diagnostics.cli:main',
+        ],
+    },
     license='MIT',
 )
