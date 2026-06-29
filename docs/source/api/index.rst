@@ -8,4 +8,5 @@ This is the API reference for the RedisAllocator package.
 
    lock
    allocator
-   task_queue 
+   task_queue
+   diagnostics

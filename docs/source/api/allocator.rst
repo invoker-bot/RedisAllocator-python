@@ -125,6 +125,89 @@ When `free` or `free_keys` is called in non-shared mode:
        PushTail --> End
        Deleted -- No --> End
 
+Atomicity Guarantees
+--------------------
+
+Allocator state transitions are implemented as Redis Lua scripts registered through
+``register_script``. Redis runs each script atomically on a single Redis instance, so
+multiple client processes cannot observe or interleave a half-updated free-list node,
+lock key, or soft-binding update. Redis Cluster is intentionally unsupported because
+the allocator mutates several related keys in the same script.
+
+The atomic boundary is one public call for the core pool operations:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 24 54
+
+   * - Operation
+     - Atomic boundary
+     - Notes
+   * - ``malloc_key()``
+     - One Lua EVAL
+     - Checks soft binding, pops or rotates the free-list head, marks the item allocated, creates the lock key, and refreshes binding state together.
+   * - ``free_keys()``
+     - One Lua EVAL
+     - Deletes lock keys and returns still-present pool members to the free-list tail together. Unknown or evicted keys are no-ops.
+   * - ``extend()`` / ``shrink()`` / ``assign()``
+     - One Lua EVAL per call
+     - Batch updates are atomic as a batch. ``assign()`` intentionally preserves lock keys for evicted members.
+   * - ``gc()``
+     - One Lua EVAL per pass
+     - Incrementally reconciles up to the requested scan count and saves the scan cursor.
+   * - ``malloc()`` / ``RedisAllocatorObject.release()``
+     - Wrapper around atomic calls
+     - ``malloc()`` wraps ``malloc_key()`` after the atomic allocation; ``release()`` wraps ``free_keys()`` after closing the local object.
+
+Multi-process recovery relies on atomic scripts plus lock TTLs and garbage collection.
+A process killed after allocation may leave a lock behind; that lock either expires
+naturally or is reconciled by ``gc()``. Permanent locks created with ``timeout <= 0``
+are never reclaimed automatically and must be released explicitly.
+
+Complexity
+----------
+
+The allocator hot path avoids full-pool scans. ``malloc_key()`` and single-key
+``free_keys()`` are the intended high-frequency operations; ``assign()`` is for
+lower-frequency wholesale replacement.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 28 27 27
+
+   * - Operation
+     - Time complexity
+     - Space / Redis writes
+     - Recommended use
+   * - ``malloc_key()``
+     - Amortized ``O(1)``; worst-case ``O(k)`` when skipping ``k`` expired or locked head entries
+     - Constant extra metadata writes
+     - Hot path allocation.
+   * - ``free_keys(n)``
+     - ``O(n)``
+     - Constant writes per released key
+     - Hot path release; single-key free is ``O(1)``.
+   * - ``extend(n)``
+     - ``O(n)``, independent of existing pool size
+     - Constant writes per supplied key
+     - Incremental pool additions or expiry refresh.
+   * - ``shrink(n)``
+     - ``O(n)``
+     - Constant writes per supplied key
+     - Remove known resources.
+   * - ``assign(n)``
+     - ``O(current_pool_size + n)``
+     - Rewrites membership for removed or new keys
+     - Low-frequency full replacement.
+   * - ``gc(count)``
+     - Approximately ``O(count)`` per pass
+     - Bounded by scanned entries
+     - Periodic incremental repair and reclaim.
+
+``k`` in ``malloc_key()`` is the number of stale head entries cleaned during that
+allocation. Those entries are removed or marked allocated as they are skipped, so
+the cost is paid once and amortizes over later calls.
+
 Shared Mode
 -----------
 

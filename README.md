@@ -447,6 +447,35 @@ Each EVAL is atomic on Redis (single-threaded server, Lua never preempted), so n
 
 The pool linked-list invariants survive arbitrary interleaving of `malloc` / `free` / `extend` / `assign` / `gc` from concurrent processes (validated by both fakeredis multi-thread tests and a Docker-backed stress driver — see Testing below). If you observe persistent invariant violations under load, please file an issue with the operation sequence.
 
+#### Atomic Operation Boundaries
+
+Allocator state transitions are written as single Redis Lua scripts. Redis runs each script atomically on the server event loop, so concurrent processes cannot observe a half-updated free-list node, lock key, or soft-binding update. This guarantee depends on using one Redis instance; Redis Cluster is out of scope because the allocator mutates multiple related keys in one script.
+
+| Operation | Atomic boundary | Notes |
+|---|---|---|
+| `malloc_key()` | One Lua EVAL | Checks soft binding, pops/rotates the free-list head, marks the item allocated, creates the lock key, and refreshes binding state together. |
+| `free_keys()` | One Lua EVAL | Deletes lock keys and returns still-present pool members to the free-list tail together. Unknown or evicted keys are no-ops. |
+| `extend()` / `shrink()` / `assign()` | One Lua EVAL per call | Batch updates are atomic as a batch. `assign()` intentionally preserves lock keys for evicted members. |
+| `gc()` | One Lua EVAL per pass | Incrementally reconciles up to the requested scan count and saves the scan cursor. |
+| `malloc()` / `RedisAllocatorObject.release()` | Wrapper around atomic calls | `malloc()` wraps `malloc_key()` after the atomic allocation; `release()` wraps `free_keys()` after closing the local object. |
+
+Multi-process coordination is provided by those atomic scripts plus lock TTLs and GC. A process killed after allocation may leave a lock behind; that lock either expires naturally or is reconciled by GC. Permanent locks (`timeout <= 0`) are never reclaimed automatically and must be released explicitly.
+
+### Operation Complexity
+
+The hot path is designed to avoid scanning the whole pool. Use `malloc_key()` / `free_keys()` for high-frequency allocation, use `extend()` for incremental pool refreshes, and reserve `assign()` for lower-frequency wholesale replacement.
+
+| Operation | Time complexity | Space / Redis writes | Recommended use |
+|---|---:|---|---|
+| `malloc_key()` | Amortized `O(1)`; worst-case `O(k)` when skipping `k` expired or locked head entries | Constant extra metadata writes | Hot path allocation. |
+| `free_keys(n)` | `O(n)` | Constant writes per released key | Hot path release; single-key free is `O(1)`. |
+| `extend(n)` | `O(n)`, independent of existing pool size | Constant writes per supplied key | Incremental pool additions or expiry refresh. |
+| `shrink(n)` | `O(n)` | Constant writes per supplied key | Remove known resources. |
+| `assign(n)` | `O(current_pool_size + n)` | Rewrites membership for removed/new keys | Low-frequency full replacement. |
+| `gc(count)` | Approximately `O(count)` per pass | Bounded by scanned entries | Periodic incremental repair/reclaim. |
+
+`k` in `malloc_key()` is the number of stale head entries cleaned during that allocation. Those entries are removed or marked allocated as they are skipped, so the cost is paid once and amortizes over later calls.
+
 ## Testing
 
 The default unit suite is fast (~7s) and self-contained — `pytest` runs it without any external services:
@@ -478,6 +507,38 @@ docker rm -f allocator-stress
 Performance contracts are validated on both backends. Real Redis 7 confirms hard `O(1)` for `malloc + free` and `extend` per-key cost across pool sizes from 10 to 5000 keys. The fakeredis `pytest -m benchmark` enforces the same threshold; it relies on a temporary monkey-patch in `tests/conftest.py` because of [fakeredis upstream PR #473](https://github.com/cunla/fakeredis-py/pull/473) (merged to master, not yet released). The patch is idempotent and self-removable once fakeredis ships a release containing the fix — see the cleanup checklist embedded in `tests/conftest.py`.
 
 A standalone Python script `tests/_perf_real_redis.py` reproduces the benchmark against a real Redis container for cross-checking.
+
+## Live Diagnostics
+
+`redis-allocator` includes an observer-only diagnostics API and local dashboard for inspecting live allocator state under multi-process load.
+
+Python API:
+
+```python
+from redis import Redis
+from redis_allocator import RedisAllocatorDiagnostics
+
+redis = Redis.from_url("redis://localhost:6379/0", decode_responses=True)
+diagnostics = RedisAllocatorDiagnostics(redis, prefix="myapp", suffix="allocator")
+snapshot = diagnostics.snapshot()
+print(snapshot.to_json(indent=2))
+```
+
+One-shot JSON:
+
+```bash
+redis-allocator-diagnose --redis-url redis://localhost:6379/0 --prefix myapp --suffix allocator --json
+```
+
+Live dashboard:
+
+```bash
+redis-allocator-diagnose --redis-url redis://localhost:6379/0 --prefix myapp --suffix allocator --interval 1 --port 8765
+```
+
+The diagnostics collector reads pool structure and per-pool-key lock state atomically with one Lua script. Advisory metrics such as Redis memory, commandstats, slowlog, soft bindings, and orphan locks are sampled separately. V1 never mutates allocator state and does not repair corruption.
+
+Use `sample_limit` to bound returned examples and `scan_limit` to cap advisory keyspace scans during dashboard refreshes. When a scan is capped, the JSON marks that section as `truncated`.
 
 ## Roadmap
 
