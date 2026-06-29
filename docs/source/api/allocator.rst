@@ -209,10 +209,11 @@ allocation. Those entries are removed or marked allocated as they are skipped, s
 the cost is paid once and amortizes over later calls.
 
 The ``pytest -m benchmark`` suite enforces these contracts across pool sizes from
-10 to 5000 keys. It covers ``malloc_key()`` plus single-key ``free_keys()``,
-batched ``free_keys(n)``, ``extend(n)``, ``shrink(n)``, ``assign(n)``, and
-``gc(count)``. ``tests/_perf_real_redis.py`` runs the same benchmark against a
-real Redis container for local cross-checks.
+10 to 5000 keys for ``malloc_key()`` plus single-key ``free_keys()``, batched
+``free_keys(n)``, ``extend(n)``, ``shrink(n)``, and ``gc(count)``. It covers
+``assign(n)`` across 10 to 1000 keys because fakeredis/lupa is unreliable with
+5000+ Lua ARGV on Windows. ``tests/_perf_real_redis.py`` runs the same benchmark
+against a real Redis container and covers ``assign(n)`` through 5000 keys.
 
 Shared Mode
 -----------

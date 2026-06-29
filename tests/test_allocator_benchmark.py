@@ -32,6 +32,7 @@ from redis_allocator.allocator import RedisAllocator
 # Pool sizes span roughly three orders of magnitude. Keep the largest
 # reasonable so the benchmark suite still finishes in seconds when opted in.
 POOL_SIZES = (10, 100, 1000, 5000)
+ASSIGN_POOL_SIZES = (10, 100, 1000)
 ITERATIONS = 200
 WARMUP_ITERATIONS = 20
 BATCH_SIZE = 10
@@ -45,8 +46,8 @@ MAX_SCALE_FACTOR = 3.0
 MAX_GC_SCALE_FACTOR = 5.0
 
 
-def _format_table(medians: Dict[int, float], unit: str) -> str:
-    return "\n".join(f"  pool_size={size:>6}: median {medians[size] * 1e6:>8.2f} {unit}" for size in POOL_SIZES)
+def _format_table(medians: Dict[int, float], unit: str, pool_sizes=POOL_SIZES) -> str:
+    return "\n".join(f"  pool_size={size:>6}: median {medians[size] * 1e6:>8.2f} {unit}" for size in pool_sizes)
 
 
 def _assert_largest_to_smallest_ratio(
@@ -54,13 +55,14 @@ def _assert_largest_to_smallest_ratio(
     operation: str,
     unit: str,
     max_scale_factor: float = MAX_SCALE_FACTOR,
+    pool_sizes=POOL_SIZES,
 ):
-    smallest = min(POOL_SIZES)
-    largest = max(POOL_SIZES)
+    smallest = min(pool_sizes)
+    largest = max(pool_sizes)
     ratio = medians[largest] / medians[smallest]
     assert ratio <= max_scale_factor, (
         f"{operation} does not satisfy its scaling contract "
-        f"(ratio {ratio:.2f}x > {max_scale_factor:.1f}x):\n{_format_table(medians, unit)}"
+        f"(ratio {ratio:.2f}x > {max_scale_factor:.1f}x):\n{_format_table(medians, unit, pool_sizes)}"
     )
 
 
@@ -154,9 +156,13 @@ def test_shrink_per_key_is_constant(redis_client: Redis):
 
 @pytest.mark.benchmark
 def test_assign_per_touched_key_is_constant(redis_client: Redis):
-    """``assign(keys)`` must be proportional to current pool size plus ``len(keys)``."""
+    """``assign(keys)`` must be proportional to current pool size plus ``len(keys)``.
+
+    fakeredis/lupa is unreliable with 5000+ Lua ARGV on Windows, so this pytest
+    contract uses a 100x size span. The real Redis benchmark script covers 5000.
+    """
     medians: Dict[int, float] = {}
-    for size in POOL_SIZES:
+    for size in ASSIGN_POOL_SIZES:
         alloc = _build_pool(redis_client, f"perfassign_{size}", size)
         left = [f"left_{size}_{item}" for item in range(size)]
         right = [f"right_{size}_{item}" for item in range(size)]
@@ -169,7 +175,7 @@ def test_assign_per_touched_key_is_constant(redis_client: Redis):
             samples.append((time.perf_counter() - t0) / (size + len(target)))
         medians[size] = statistics.median(samples)
 
-    _assert_largest_to_smallest_ratio(medians, "assign per-touched-key cost", "us/key")
+    _assert_largest_to_smallest_ratio(medians, "assign per-touched-key cost", "us/key", pool_sizes=ASSIGN_POOL_SIZES)
 
 
 @pytest.mark.benchmark
