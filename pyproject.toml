@@ -16,7 +16,8 @@ tag_format = "v$version"
 # Run them explicitly with:
 #     pytest -m concurrency           # multi-thread fakeredis race tests
 #     pytest -m fuzz                  # randomised single-thread sequences
-#     pytest -m "concurrency or fuzz"
+#     pytest -m benchmark             # allocator operation-complexity contracts
+#     pytest -m "concurrency or fuzz or benchmark"
 markers = [
     "concurrency: tests that drive the allocator from multiple threads (fakeredis)",
     "fuzz: random-sequence exploratory tests (may exercise lupa edge cases)",

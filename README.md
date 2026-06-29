@@ -492,7 +492,7 @@ Several test categories are **opt-in via pytest markers** (excluded from the def
 ```bash
 pytest -m concurrency             # multi-thread fakeredis race tests (~25s)
 pytest -m fuzz                    # randomised single-thread sequences
-pytest -m benchmark               # constant-time complexity assertions for malloc/free/extend
+pytest -m benchmark               # operation-complexity assertions for allocator commands
 pytest -m "concurrency or fuzz or benchmark"   # all of the above
 ```
 
@@ -504,9 +504,9 @@ python tests/stress_pool_corruption.py        # 60s default; STRESS_DURATION/STR
 docker rm -f allocator-stress
 ```
 
-Performance contracts are validated on both backends. Real Redis 7 confirms hard `O(1)` for `malloc + free` and `extend` per-key cost across pool sizes from 10 to 5000 keys. The fakeredis `pytest -m benchmark` enforces the same threshold; it relies on a temporary monkey-patch in `tests/conftest.py` because of [fakeredis upstream PR #473](https://github.com/cunla/fakeredis-py/pull/473) (merged to master, not yet released). The patch is idempotent and self-removable once fakeredis ships a release containing the fix — see the cleanup checklist embedded in `tests/conftest.py`.
+Performance contracts are validated on both backends. The fakeredis `pytest -m benchmark` suite enforces scaling ratios across pool sizes from 10 to 5000 keys for `malloc_key() + free_keys()`, batched `free_keys(n)`, `extend(n)`, `shrink(n)`, `assign(n)`, and `gc(count)`. The benchmark asserts operation cost follows the documented complexity table instead of silently regressing to full-pool scans. It relies on a temporary monkey-patch in `tests/conftest.py` because of [fakeredis upstream PR #473](https://github.com/cunla/fakeredis-py/pull/473) (merged to master, not yet released). The patch is idempotent and self-removable once fakeredis ships a release containing the fix — see the cleanup checklist embedded in `tests/conftest.py`.
 
-A standalone Python script `tests/_perf_real_redis.py` reproduces the benchmark against a real Redis container for cross-checking.
+A standalone Python script `tests/_perf_real_redis.py` reproduces the same operation-complexity benchmark against a real Redis container for cross-checking and exits non-zero when a contract fails.
 
 ## Live Diagnostics
 
