@@ -11,6 +11,8 @@ def _to_plain(value: Any) -> Any:
     """Convert dataclasses, lists, and dictionaries into JSON-safe values."""
     if is_dataclass(value):
         return {key: _to_plain(item) for key, item in asdict(value).items()}
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
     if isinstance(value, list):
         return [_to_plain(item) for item in value]
     if isinstance(value, dict):
@@ -66,6 +68,8 @@ class BindingDiagnostics(JsonModel):
 
     total: int = 0
     stale: int = 0
+    scanned: int = 0
+    truncated: bool = False
     samples: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -74,6 +78,8 @@ class OrphanDiagnostics(JsonModel):
     """Lock keys that no longer belong to the allocator pool."""
 
     count: int = 0
+    scanned: int = 0
+    truncated: bool = False
     samples: list[str] = field(default_factory=list)
 
 
