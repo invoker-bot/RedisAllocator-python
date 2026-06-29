@@ -44,7 +44,7 @@ A few intentional behaviors that may surprise newcomers — knowing them up-fron
 - **`cache_timeout=0` (or negative) creates a permanent soft binding.** Sticks until explicitly overwritten by another `update_soft_bind` for the same name, or removed via `unbind_soft_bind`. Symmetric to the lock-timeout contract above.
 - **`malloc()` and `malloc_key()` return `None` when no resource is available.** Check the return value before using it; an empty pool is not represented as a wrapper with `key=None`.
 - **Prefer `with allocator.malloc(...) as allocation:` or `allocation.release()` for object allocations.** `release()` closes the wrapped object and returns the key to the pool. Plain `close()` only closes the wrapped object and leaves allocation ownership unchanged for callers that manage `free()` manually.
-- **`assign()` does not delete the lock keys of items it evicts.** A deliberate write-amplification trade-off: locks expire on their own TTL, and if the same key is later re-`extend`-ed into the pool, the new `extend`/`assign` clears any residual lock so the new entry starts clean. If you evict a key and never re-add it, the lock is an orphan — callers who care must `DEL <prefix>|<suffix>:<key>` themselves.
+- **`assign()` / `shrink()` / `clear()` are not namespace scrubbers.** `assign()` and `shrink()` remove pool membership but intentionally leave lock keys for removed members; `clear()` deletes the pool hash/head/tail only. This avoids write amplification and wildcard scans, but an evicted permanent lock becomes a permanent orphan. To recover a known orphan, call `free_keys(key)`, reintroduce that same key with `extend([key])` or `assign([... key ...])`, or delete `<prefix>|<suffix>:<key>` directly. Reintroducing unrelated keys, `clear()`, and `gc()` do not remove orphan locks outside the pool.
 - **Pool keys are validated at the API boundary.** `extend()` / `assign()` raise `ValueError` for keys that are empty, equal to the literal `"#ALLOCATED"`, contain the `"||"` separator, contain NUL bytes, or are not strings. These shapes break the on-disk encoding and would silently corrupt the linked list.
 
 ## Documentation
@@ -443,7 +443,7 @@ The RedisAllocator maintains resources in a doubly-linked list structure stored 
 
 ### Concurrency Safety
 
-Each EVAL is atomic on Redis (single-threaded server, Lua never preempted), so no operation can be observed half-completed. Multi-process coordination is then provided by lock TTL plus the GC pass — a process killed mid-sequence leaves at most an orphaned lock, which expires on its TTL or is reclaimed by GC.
+Each EVAL is atomic on Redis (single-threaded server, Lua never preempted), so no operation can be observed half-completed. Multi-process coordination is then provided by lock TTL plus the GC pass. A process killed after allocation can leave a lock behind. If the resource is still present in pool metadata, the lock either expires naturally or is reconciled by GC; if the resource is later evicted by `assign()` / `shrink()` / `clear()`, the lock becomes an orphan outside GC scope and expires only by TTL unless it is permanent.
 
 The pool linked-list invariants survive arbitrary interleaving of `malloc` / `free` / `extend` / `assign` / `gc` from concurrent processes (validated by both fakeredis multi-thread tests and a Docker-backed stress driver — see Testing below). If you observe persistent invariant violations under load, please file an issue with the operation sequence.
 
@@ -455,11 +455,12 @@ Allocator state transitions are written as single Redis Lua scripts. Redis runs 
 |---|---|---|
 | `malloc_key()` | One Lua EVAL | Checks soft binding, pops/rotates the free-list head, marks the item allocated, creates the lock key, and refreshes binding state together. |
 | `free_keys()` | One Lua EVAL | Deletes lock keys and returns still-present pool members to the free-list tail together. Unknown or evicted keys are no-ops. |
-| `extend()` / `shrink()` / `assign()` | One Lua EVAL per call | Batch updates are atomic as a batch. `assign()` intentionally preserves lock keys for evicted members. |
+| `extend()` / `shrink()` / `assign()` | One Lua EVAL per call | Batch updates are atomic as a batch. `assign()` and `shrink()` intentionally preserve lock keys for evicted members; `extend()` / `assign()` delete a residual lock only when that same key is newly added to the pool. |
+| `clear()` | One Lua EVAL | Deletes the pool hash plus head/tail pointers only; it does not scan or delete per-resource lock keys. |
 | `gc()` | One Lua EVAL per pass | Incrementally reconciles up to the requested scan count and saves the scan cursor. |
 | `malloc()` / `RedisAllocatorObject.release()` | Wrapper around atomic calls | `malloc()` wraps `malloc_key()` after the atomic allocation; `release()` wraps `free_keys()` after closing the local object. |
 
-Multi-process coordination is provided by those atomic scripts plus lock TTLs and GC. A process killed after allocation may leave a lock behind; that lock either expires naturally or is reconciled by GC. Permanent locks (`timeout <= 0`) are never reclaimed automatically and must be released explicitly.
+Multi-process coordination is provided by those atomic scripts plus lock TTLs and GC. A process killed after allocation may leave a lock behind; pool-member locks either expire naturally or are reconciled by GC. Orphan locks whose key is no longer in the pool are outside GC scope. Permanent locks (`timeout <= 0`) are never reclaimed automatically and must be released explicitly with `free_keys(key)`, by reintroducing that same key with `extend([key])` or `assign([... key ...])`, or by deleting `<prefix>|<suffix>:<key>` directly.
 
 ### Operation Complexity
 
@@ -536,7 +537,7 @@ Live dashboard:
 redis-allocator-diagnose --redis-url redis://localhost:6379/0 --prefix myapp --suffix allocator --interval 1 --port 8765
 ```
 
-The diagnostics collector reads pool structure and per-pool-key lock state atomically with one Lua script. Advisory metrics such as Redis memory, commandstats, slowlog, soft bindings, and orphan locks are sampled separately. V1 never mutates allocator state and does not repair corruption.
+The diagnostics collector reads pool structure and per-pool-key lock state atomically with one Lua script. Advisory metrics such as Redis memory, commandstats, slowlog, soft bindings, and orphan locks are sampled separately. V1 never mutates allocator state and does not repair corruption. Orphan-lock samples are reporting only: clean a known orphan with `free_keys(key)`, by reintroducing the same key through `extend()` / `assign()`, or with a precise Redis `DEL`; `clear()` and `gc()` do not repair orphan locks outside the pool.
 
 Use `sample_limit` to bound returned examples and `scan_limit` to cap advisory keyspace scans during dashboard refreshes. When a scan is capped, the JSON marks that section as `truncated`.
 

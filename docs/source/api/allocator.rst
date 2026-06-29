@@ -151,7 +151,10 @@ The atomic boundary is one public call for the core pool operations:
      - Deletes lock keys and returns still-present pool members to the free-list tail together. Unknown or evicted keys are no-ops.
    * - ``extend()`` / ``shrink()`` / ``assign()``
      - One Lua EVAL per call
-     - Batch updates are atomic as a batch. ``assign()`` intentionally preserves lock keys for evicted members.
+     - Batch updates are atomic as a batch. ``assign()`` and ``shrink()`` intentionally preserve lock keys for evicted members; ``extend()`` / ``assign()`` delete a residual lock only when that same key is newly added to the pool.
+   * - ``clear()``
+     - One Lua EVAL
+     - Deletes the pool hash plus head/tail pointers only; it does not scan or delete per-resource lock keys.
    * - ``gc()``
      - One Lua EVAL per pass
      - Incrementally reconciles up to the requested scan count and saves the scan cursor.
@@ -160,9 +163,12 @@ The atomic boundary is one public call for the core pool operations:
      - ``malloc()`` wraps ``malloc_key()`` after the atomic allocation; ``release()`` wraps ``free_keys()`` after closing the local object.
 
 Multi-process recovery relies on atomic scripts plus lock TTLs and garbage collection.
-A process killed after allocation may leave a lock behind; that lock either expires
-naturally or is reconciled by ``gc()``. Permanent locks created with ``timeout <= 0``
-are never reclaimed automatically and must be released explicitly.
+A process killed after allocation may leave a lock behind; pool-member locks either
+expire naturally or are reconciled by ``gc()``. Orphan locks whose key is no longer
+in the pool are outside GC scope. Permanent locks created with ``timeout <= 0`` are
+never reclaimed automatically and must be released explicitly with ``free_keys(key)``,
+by reintroducing that same key with ``extend([key])`` or ``assign([... key ...])``,
+or by deleting ``<prefix>|<suffix>:<key>`` directly.
 
 Complexity
 ----------

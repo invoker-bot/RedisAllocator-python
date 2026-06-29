@@ -58,6 +58,23 @@ Health States
    The atomic pool snapshot violates linked-list or lock invariants. Stop writers
    and capture diagnostics JSON before attempting manual repair.
 
+Orphan-Lock Recovery
+--------------------
+
+Orphan-lock samples are observer-only diagnostics. The diagnostics API and live
+dashboard never mutate allocator state.
+
+Known orphan locks can be cleaned precisely by one of these paths:
+
+* call ``free_keys(key)`` on the allocator;
+* reintroduce that same key with ``extend([key])`` or ``assign([... key ...])``;
+* delete ``<prefix>|<suffix>:<key>`` directly in Redis.
+
+``clear()`` deletes only the pool hash and head/tail pointers. ``gc()`` scans pool
+metadata. Neither operation scans the lock namespace, so neither one repairs
+orphan locks whose key is already outside the pool. Permanent orphan locks
+(``TTL == -1``) remain until one of the explicit cleanup paths above is used.
+
 Class Reference
 ---------------
 
