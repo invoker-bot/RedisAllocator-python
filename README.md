@@ -7,6 +7,8 @@ RedisAllocator provides robust and efficient components for managing distributed
 The core philosophy is to leverage Redis's speed and atomic Lua scripting capabilities to ensure consistency and performance for resource allocation, locking, and task queuing, while operating within a single Redis instance for simplicity and atomicity guarantees.
 
 > **Note**: RedisAllocator is optimized for single Redis instance deployments. Its reliance on Lua scripting for atomicity makes it unsuitable for standard Redis Cluster configurations. For cluster environments, consider alternative locking mechanisms like RedLock.
+>
+> Docker can still be used to run Redis, application workers, or integration stress tests. RedisAllocator does not provide Docker cluster orchestration, container scheduling, or native Redis Cluster support; if Docker hosts or container slots need allocation, model them as ordinary resource keys in your application code.
 
 ## Core Design Principles & Features
 
@@ -572,6 +574,7 @@ Use `sample_limit` to bound returned examples and `scan_limit` to cap advisory k
 *   **Out of Scope (Current Direction):**
     *   Native Redis Cluster support.
     *   Multi-key atomic operations beyond single-instance Lua capabilities.
+    *   Native Docker cluster orchestration or container scheduling. Docker-backed workers can use RedisAllocator by treating hosts, ports, GPUs, or container slots as normal resource keys.
 
 ## Contributing
 

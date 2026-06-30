@@ -97,6 +97,8 @@ Important considerations regarding Redis deployment:
 1. RedisLock requires a single Redis instance (standalone or master in master-replica setup)
 2. It is not compatible with Redis Cluster, as cluster mode doesn't guarantee atomicity
 3. For Redis Cluster environments, consider alternative solutions such as RedLock
+4. Docker can run Redis or application workers, but RedisAllocator does not orchestrate Docker clusters or schedule containers
+5. To allocate Docker-related capacity, model hosts, ports, GPUs, or container slots as ordinary allocator keys in your application code
 
 Using RedisAllocator for Resource Management
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
